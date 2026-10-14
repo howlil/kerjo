@@ -17,11 +17,11 @@ from jobhunt.freshness import posting_age_status
 from jobhunt.location import match_area
 from jobhunt.models import Job, SourceResult
 
-URL_RE = re.compile(r"https://[^\\s<>\\[\\]()\\\"']+", re.I)
+URL_RE = re.compile(r"https://[^\s<>\[\]()\\"']+", re.I)
 ROLE_RE = re.compile(
-    r"\\b(?:junior |senior |associate |staff |lead |graduate |internship |intern )?"
+    r"\b(?:junior |senior |associate |staff |lead |graduate |internship |intern )?"
     r"(?:backend|back-end|frontend|front-end|full.?stack|software|platform|cloud|devops|data|qa|site reliability)"
-    r"\\s+(?:engineer|developer|intern|programmer)\\b", re.I)
+    r"\s+(?:engineer|developer|intern|programmer)\b", re.I)
 BLOCKED_HOSTS = (
     "linkedin.com", "www.linkedin.com", "facebook.com", "www.facebook.com",
     "instagram.com", "www.instagram.com", "t.me", "wa.me",
