@@ -58,7 +58,8 @@ def verified_vacancy_key(job: Dict[str, Any]) -> tuple:
     merges that would change seen/saved/application state on another vacancy.
     """
     normalized_url = canonical_vacancy_url(job.get("url") or "")
-    if normalized_url:
+    # A homepage or generic root URL is not evidence of a shared vacancy.
+    if normalized_url and urlsplit(normalized_url).path != "/":
         return ("url", normalized_url,
                 normalize_key(job.get("company", ""), job.get("title", "")),
                 job.get("area") or "unspecified",
