@@ -4,6 +4,7 @@ import json
 import logging
 from typing import Optional
 from jobhunt.models import Job, SourceResult
+from jobhunt.collection import retry_after_seconds
 from jobhunt.location import match_area
 
 logger = logging.getLogger(__name__)
@@ -102,12 +103,13 @@ def fetch_karir(keyword: str, page: int = 1, limit: int = 30) -> SourceResult:
                     success=False,
                     jobs=[],
                     error_message=f"HTTP status {response.status}",
+                    http_status=response.status,
                 )
             payload_data = json.loads(response.read().decode("utf-8"))
             if not isinstance((payload_data.get("data") or {}).get("opportunities"), list):
                 return SourceResult(source="karir", success=False, jobs=[], error_message="Unexpected provider schema")
             jobs = parse_karir_payload(payload_data)
-            return SourceResult(source="karir", success=True, jobs=jobs)
+            return SourceResult(source="karir", success=True, jobs=jobs, raw_count=len(payload_data["data"]["opportunities"]), pages_fetched=1)
     except urllib.error.HTTPError as e:
         return SourceResult(
             source="karir",
