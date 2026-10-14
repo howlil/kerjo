@@ -59,8 +59,6 @@ class Database:
                 CREATE INDEX IF NOT EXISTS idx_jobs_area ON jobs(area);
                 CREATE INDEX IF NOT EXISTS idx_jobs_is_new ON jobs(is_new);
                 CREATE INDEX IF NOT EXISTS idx_jobs_posted_at ON jobs(posted_at);
-                CREATE INDEX IF NOT EXISTS idx_jobs_exp_level ON jobs(experience_level);
-                CREATE INDEX IF NOT EXISTS idx_jobs_role_cat ON jobs(role_category);
 
                 CREATE TABLE IF NOT EXISTS job_runs (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -91,6 +89,10 @@ class Database:
                         conn.execute(f"ALTER TABLE jobs ADD COLUMN {col_name} {col_def}")
                     except sqlite3.OperationalError:
                         pass
+
+            # Create indexes on migrated columns safely
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_jobs_exp_level ON jobs(experience_level);")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_jobs_role_cat ON jobs(role_category);")
 
     # ---------------- Search Queries ----------------
     def create_search(self, keyword: str, area: str = "all", sources: Optional[List[str]] = None) -> int:
@@ -125,10 +127,44 @@ class Database:
         with self._get_connection() as conn:
             conn.execute("DELETE FROM searches WHERE id = ?", (search_id,))
 
+    def reset_database(self):
+        """
+        Completely resets jobs and job_runs tables to clean slate.
+        """
+        with self._get_connection() as conn:
+            conn.execute("DELETE FROM jobs")
+            conn.execute("DELETE FROM job_runs")
+            try:
+                conn.execute("DELETE FROM sqlite_sequence WHERE name IN ('jobs', 'job_runs')")
+            except sqlite3.OperationalError:
+                pass
+            conn.commit()
+
+    def seed_default_searches(self):
+        """
+        Seeds default technical searches if searches table is empty.
+        """
+        default_searches = [
+            ("Backend Engineer", "all"),
+            ("Frontend Engineer", "all"),
+            ("Fullstack Developer", "all"),
+            ("Mobile Developer", "all"),
+            ("DevOps Engineer", "all"),
+            ("Data Engineer", "all"),
+            ("QA Engineer", "all"),
+            ("Product Engineer", "all"),
+        ]
+        with self._get_connection() as conn:
+            existing = conn.execute("SELECT count(*) FROM searches").fetchone()[0]
+            if existing == 0:
+                for kw, area in default_searches:
+                    self.create_search(keyword=kw, area=area)
+
     # ---------------- Job Queries & Upsert ----------------
     def upsert_jobs(self, jobs: List[Job]) -> Tuple[int, int]:
         """
         Inserts new jobs with is_new = 1.
+        Strictly rejects any non-technical / excluded roles.
         If job already exists (source, external_id match):
         - updates last_seen_at
         - keeps previous is_new state
@@ -142,14 +178,18 @@ class Database:
 
         with self._get_connection() as conn:
             for job in jobs:
-                # Classify if not yet assigned
-                if not job.experience_level or job.experience_level == "unspecified":
-                    cl = classify_job(job.title, job.description)
-                    job.experience_level = cl["experience_level"]
-                    job.min_years = cl["min_years"]
-                    job.max_years = cl["max_years"]
-                    job.experience_raw = cl["experience_raw"]
-                    job.role_category = cl["role_category"]
+                # Classify role & experience
+                cl = classify_job(job.title, job.description)
+                
+                # Strict firewall: Discard non-technical or excluded roles!
+                if not cl["is_technical"] or cl["role_category"] in ("other", None):
+                    continue
+
+                job.experience_level = cl["experience_level"]
+                job.min_years = cl["min_years"]
+                job.max_years = cl["max_years"]
+                job.experience_raw = cl["experience_raw"]
+                job.role_category = cl["role_category"]
 
                 # Check if exists
                 existing = conn.execute(
@@ -282,6 +322,8 @@ class Database:
         if role_category and role_category != "all":
             sql += " AND role_category = ?"
             params.append(role_category)
+        else:
+            sql += " AND role_category != 'other'"
 
         if query_text:
             sql += " AND (title LIKE ? OR company LIKE ? OR location_raw LIKE ? OR description LIKE ?)"

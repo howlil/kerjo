@@ -56,3 +56,10 @@ tasks:
     desc: Daftarkan otomatisasi tiap jam ke Windows Task Scheduler
     cmds:
       - powershell -ExecutionPolicy Bypass -File scripts/schedule.ps1
+
+  reset-db:
+    desc: Reset dan bersihkan semua data loker lama di database
+    env:
+      PYTHONPATH: apps/api
+    cmds:
+      - 'python -c "from jobhunt.db import Database; db = Database(); db.reset_database(); print(''Database reset: 0 jobs remain'')"'

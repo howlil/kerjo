@@ -107,5 +107,71 @@ class TestDatabase(unittest.TestCase):
         self.assertEqual(len(fe_jobs), 1)
         self.assertEqual(fe_jobs[0]["title"], "Junior Frontend Engineer")
 
+    def test_rejection_of_non_technical_jobs(self):
+        j_pm = Job(
+            source="jobstreet",
+            external_id="pm1",
+            title="IT Project Manager (Junior)",
+            company="Agency",
+            location_raw="Jakarta",
+            area="jakarta_selatan",
+            url="https://jobstreet.com/pm1",
+            description="Manage sprints and document meetings"
+        )
+        j_maintenance = Job(
+            source="jobstreet",
+            external_id="m1",
+            title="Maintenance Service Engineer EV Charger",
+            company="EV Co",
+            location_raw="Jakarta",
+            area="jakarta_barat",
+            url="https://jobstreet.com/m1",
+            description="Service EV charger units"
+        )
+        j_sales = Job(
+            source="glints",
+            external_id="s1",
+            title="Technical Sales Engineer",
+            company="B2B Co",
+            location_raw="Jakarta",
+            area="jakarta_pusat",
+            url="https://glints.com/s1",
+            description="Sell B2B industrial machinery"
+        )
+        j_valid = Job(
+            source="kalibrr",
+            external_id="v1",
+            title="Go Backend Developer",
+            company="Tech Corp",
+            location_raw="Jakarta Selatan",
+            area="jakarta_selatan",
+            url="https://kalibrr.com/v1",
+            description="Golang microservices and PostgreSQL"
+        )
+
+        new_count, total = self.db.upsert_jobs([j_pm, j_maintenance, j_sales, j_valid])
+        # Only the valid technical job should be inserted!
+        self.assertEqual(new_count, 1)
+
+        jobs = self.db.get_jobs()
+        self.assertEqual(len(jobs), 1)
+        self.assertEqual(jobs[0]["title"], "Go Backend Developer")
+
+    def test_reset_database(self):
+        j_valid = Job(
+            source="kalibrr",
+            external_id="v2",
+            title="DevOps Engineer",
+            company="Cloud Co",
+            location_raw="Jakarta",
+            area="jakarta_selatan",
+            url="https://kalibrr.com/v2",
+        )
+        self.db.upsert_jobs([j_valid])
+        self.assertEqual(len(self.db.get_jobs()), 1)
+
+        self.db.reset_database()
+        self.assertEqual(len(self.db.get_jobs()), 0)
+
 if __name__ == "__main__":
     unittest.main()

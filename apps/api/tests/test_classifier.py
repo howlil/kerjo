@@ -1,5 +1,5 @@
 import unittest
-from jobhunt.classifier import classify_job, extract_experience, classify_role
+from jobhunt.classifier import classify_job, extract_experience, classify_role, is_strictly_technical_role
 
 class TestJobClassifier(unittest.TestCase):
     def test_extract_experience_entry(self):
@@ -44,22 +44,91 @@ class TestJobClassifier(unittest.TestCase):
                 self.assertEqual(res["level"], exp_level, f"Failed for text: {text}")
                 self.assertGreaterEqual(res["min_years"], 3)
 
-    def test_classify_role_and_exclusion(self):
-        # Software engineering roles
-        self.assertEqual(classify_role("Junior Backend Engineer"), "backend")
-        self.assertEqual(classify_role("Frontend Developer React"), "frontend")
-        self.assertEqual(classify_role("Fullstack Software Engineer"), "fullstack")
-        self.assertEqual(classify_role("Software Engineer - Core Platform"), "software_engineer")
-        self.assertEqual(classify_role("DevOps Engineer / SRE"), "devops")
-        self.assertEqual(classify_role("Mobile Developer (Flutter/iOS)"), "mobile")
-        self.assertEqual(classify_role("QA Automation Engineer"), "qa")
-        self.assertEqual(classify_role("Data Engineer / Analyst"), "data")
+    def test_strictly_technical_roles_allowed(self):
+        allowed_roles = [
+            ("Junior Backend Engineer", "backend"),
+            ("Frontend Developer React", "frontend"),
+            ("Fullstack Software Engineer", "fullstack"),
+            ("Software Engineer - Core Platform", "software_engineer"),
+            ("DevOps Engineer / SRE", "infra_network"),
+            ("Mobile Developer (Flutter/iOS)", "mobile"),
+            ("Android Engineer", "mobile"),
+            ("iOS Developer (Swift)", "mobile"),
+            ("QA Automation Engineer", "qa"),
+            ("SDET", "qa"),
+            ("Data Engineer", "data"),
+            ("Machine Learning Engineer", "data"),
+            ("AI Engineer (GenAI)", "data"),
+            ("Network Engineer F5", "infra_network"),
+            ("Cyber Security Engineer", "infra_network"),
+            ("Database Administrator (DBA)", "infra_network"),
+            ("Golang Developer", "backend"),
+            ("Python Developer", "backend"),
+            ("Java Developer (Spring Boot)", "backend"),
+            ("Next.js Developer", "frontend"),
+            # Product Engineer is explicitly ALLOWED!
+            ("Product Engineer", "product_engineer"),
+            ("Senior Product Engineer - Merchant Experience", "product_engineer"),
+        ]
+        for title, expected_cat in allowed_roles:
+            with self.subTest(title=title):
+                is_tech, cat, reason = is_strictly_technical_role(title)
+                self.assertTrue(is_tech, f"Expected {title} to be accepted, but rejected: {reason}")
+                self.assertEqual(cat, expected_cat)
 
-        # Excluded non-software engineering roles
-        self.assertEqual(classify_role("Civil Engineer Project"), "other")
-        self.assertEqual(classify_role("Mechanical Engineer Maintenance"), "other")
-        self.assertEqual(classify_role("Sales Engineer B2B"), "other")
-        self.assertEqual(classify_role("Electrical Site Engineer Building"), "other")
+    def test_non_technical_roles_strictly_rejected(self):
+        rejected_roles = [
+            # IT Document & Management (PM, Scrum, Tech Writer, BA)
+            "Product Manager",
+            "Associate Product Manager (APM)",
+            "Group Product Manager",
+            "Head of Product",
+            "IT Project Manager (Junior)",
+            "Project Manager",
+            "Project Administrator",
+            "Scrum Master",
+            "Agile Coach",
+            "Lead Technical & Scrum",
+            "Business Analyst",
+            "IT Business Analyst",
+            "Technical Writer",
+            "IT Technical Writer",
+            "Document Controller",
+            "IT Auditor",
+            "IT Support / Helpdesk",
+            "Desktop Support Technician",
+            # Creative & Design
+            "UI/UX Designer",
+            "Product Designer",
+            "Graphic Designer",
+            "Senior 3D Animator at MDN",
+            # Business, Sales, Marketing
+            "Sales Engineer",
+            "Technical Sales Engineer",
+            "Business Process Improvement",
+            "Account Executive",
+            "Management Trainee - Key Account Manager",
+            "Stakeholder & Government Relations Expert",
+            "HR Specialist",
+            "Finance & Tax Officer",
+            # Non-IT Engineering & Field Trades
+            "Maintenance Service Engineer EV Charger",
+            "Maintenance / Teknisi Gedung (Education)",
+            "Helper Teknisi CCTV",
+            "Teknisi",
+            "Expression of Interest - Lead Mechanical Static Engineer",
+            "Expression of Interest - Lead Structural Engineer",
+            "Estimator Engineer - Construction (EPC)",
+            "BIM MANAGER",
+            "SENIOR RIGGER",
+            "Civil Engineer",
+            "Site Engineer (Project)",
+        ]
+        for title in rejected_roles:
+            with self.subTest(title=title):
+                is_tech, cat, reason = is_strictly_technical_role(title)
+                self.assertFalse(is_tech, f"Expected {title} to be rejected, but was classified as {cat}")
+                self.assertEqual(classify_role(title), "other")
 
     def test_full_job_classification(self):
         # Junior Engineer specifically
@@ -67,25 +136,27 @@ class TestJobClassifier(unittest.TestCase):
             title="Junior Backend Engineer",
             description="Kualifikasi: Fresh graduate atau pengalaman 0-1 tahun dengan Node.js"
         )
+        self.assertTrue(job_junior["is_technical"])
         self.assertEqual(job_junior["experience_level"], "entry")
         self.assertEqual(job_junior["role_category"], "backend")
         self.assertIn("0 - 1", job_junior["experience_raw"])
 
-        # Senior Engineer specifically
-        job_senior = classify_job(
-            title="Senior Software Engineer",
-            description="Requirements: Min 5 years in software architecture"
+        # Product Engineer allowed
+        job_pe = classify_job(
+            title="Senior Product Engineer",
+            description="Requirements: 4+ years in fullstack product development"
         )
-        self.assertEqual(job_senior["experience_level"], "senior")
-        self.assertEqual(job_senior["role_category"], "software_engineer")
+        self.assertTrue(job_pe["is_technical"])
+        self.assertEqual(job_pe["experience_level"], "senior")
+        self.assertEqual(job_pe["role_category"], "product_engineer")
 
-        # Title is generic "Software Engineer" but description requires min 2 years
-        job_mid = classify_job(
-            title="Software Engineer",
-            description="Minimal 2 tahun pengalaman kerja di bidang Go/Python"
+        # Excluded PM job
+        job_pm = classify_job(
+            title="Product Manager",
+            description="Lead agile sprint and PRD specifications"
         )
-        self.assertEqual(job_mid["experience_level"], "mid")
-        self.assertEqual(job_mid["role_category"], "software_engineer")
+        self.assertFalse(job_pm["is_technical"])
+        self.assertEqual(job_pm["role_category"], "other")
 
 if __name__ == "__main__":
     unittest.main()

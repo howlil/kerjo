@@ -71,7 +71,10 @@ class JobRunner:
         """
         searches = self.db.get_searches(active_only=True)
         if not searches:
-            logger.info("No active searches found.")
+            logger.info("No active searches found. Seeding default technical searches.")
+            self.db.seed_default_searches()
+            searches = self.db.get_searches(active_only=True)
+        if not searches:
             return []
 
         results = []

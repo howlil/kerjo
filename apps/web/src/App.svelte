@@ -46,14 +46,15 @@
 
   const roleCategories = [
     { id: 'all', label: 'Semua Role' },
-    { id: 'software_engineer', label: 'Software Engineer' },
     { id: 'backend', label: 'Backend' },
     { id: 'frontend', label: 'Frontend' },
     { id: 'fullstack', label: 'Fullstack' },
     { id: 'mobile', label: 'Mobile' },
-    { id: 'devops', label: 'DevOps / Cloud' },
-    { id: 'qa', label: 'QA / Testing' },
     { id: 'data', label: 'Data / AI' },
+    { id: 'infra_network', label: 'Infra / DevOps' },
+    { id: 'qa', label: 'QA / Testing' },
+    { id: 'product_engineer', label: 'Product Engineer' },
+    { id: 'software_engineer', label: 'Software Engineer' },
   ];
 
   const experienceLevels = [
@@ -229,7 +230,9 @@
   }
 
   function formatRole(roleStr) {
-    if (!roleStr || roleStr === 'unspecified') return 'Engineer';
+    if (!roleStr || roleStr === 'other' || roleStr === 'unspecified') return 'Technical Role';
+    if (roleStr === 'infra_network') return 'INFRA / DEVOPS';
+    if (roleStr === 'product_engineer') return 'PRODUCT ENGINEER';
     return roleStr.replace(/_/g, ' ').toUpperCase();
   }
 
