@@ -3,7 +3,27 @@
   import Timeline from '../Timeline.svelte';
   import CompanyAvatar from '../ui/CompanyAvatar.svelte';
   import Button from '../ui/Button.svelte';
-  let { job = null, saved = false, onClose, onCompany, onSeen, onSave, formatRole, formatArea } = $props();
+  let { job = null, saved = false, onClose, onCompany, onSeen, onSave, onApply, formatRole, formatArea } = $props();
+  let editing = $state(false);
+  let lastJobId = $state(null);
+  let draftStatus = $state('not_applied');
+  let draftNotes = $state('');
+  let draftFollowUp = $state('');
+  $effect(() => {
+    const id = job?.id ?? null;
+    if (id !== lastJobId) {
+      lastJobId = id;
+      editing = false;
+      draftStatus = job?.application_status || 'not_applied';
+      draftNotes = job?.application_notes || '';
+      draftFollowUp = job?.follow_up_at?.slice(0,10) || '';
+    }
+  });
+  async function submitApplication() {
+    if (!job || !onApply) return;
+    const success = await onApply(job,{status:draftStatus,notes:draftNotes,follow_up_at:draftFollowUp || null});
+    if (success) editing = false;
+  }
 </script>
 
 <div class="panel-heading">
@@ -34,6 +54,39 @@
         <div><dt>Salary</dt><dd>{job.salary || 'Not disclosed'}</dd></div>
       </dl>
       {#if job.experience_raw}<p class="inspector-note">Persyaratan: {job.experience_raw}</p>{/if}
+    </section>
+    <section class="panel-section">
+      <h3>MATCH & ELIGIBILITY</h3>
+      {#if job.match}
+        <p class="inspector-note"><strong>{job.match.score}/100</strong> · {job.match.eligibility}</p>
+        {#each job.match.reasons as reason}<p class="inspector-note">✓ {reason}</p>{/each}
+        {#each job.match.blockers as reason}<p class="inspector-note">Mismatch: {reason}</p>{/each}
+        {#each job.match.unknowns as reason}<p class="inspector-note">Belum pasti: {reason}</p>{/each}
+      {/if}
+      <div style="display:flex;gap:8px;align-items:center;margin-top:10px">
+        <Button onclick={() => editing = !editing} variant="primary">{editing ? 'Tutup' : 'Kelola lamaran'}</Button>
+        {#if job.application_status && job.application_status !== 'not_applied'}
+          <span class="inspector-note">{job.application_status}</span>
+        {/if}
+      </div>
+      {#if editing}
+        <div class="inspector-application-form">
+          <label>Status
+            <select class="ui-input" bind:value={draftStatus}>
+              {#each [['not_applied','Belum melamar'],['applied','Applied'],['screening','Screening'],['interview','Interview'],['offer','Offer'],['rejected','Rejected'],['withdrawn','Withdrawn']] as [id,label]}
+                <option value={id}>{label}</option>
+              {/each}
+            </select>
+          </label>
+          <label>Catatan
+            <textarea class="ui-input" rows="3" bind:value={draftNotes} placeholder="Catatan atau langkah berikutnya…"></textarea>
+          </label>
+          <label>Follow-up
+            <input class="ui-input" type="date" bind:value={draftFollowUp}/>
+          </label>
+          <Button onclick={submitApplication} variant="primary">Simpan status</Button>
+        </div>
+      {/if}
     </section>
     <section class="panel-section">
       <h3>ACTIVITY</h3>
@@ -68,3 +121,10 @@
 {:else}
   <div class="panel-scroll inspector-placeholder"><Icon name="briefcase" size={23}/><strong>Pilih lowongan</strong><span>Detail posisi akan ditampilkan di sini.</span></div>
 {/if}
+
+<style>
+.inspector-application-form{display:grid;gap:10px;margin-top:12px}
+.inspector-application-form label{display:grid;gap:5px;font-size:11px;color:var(--color-text-secondary)}
+.inspector-application-form .ui-input{padding:8px;font-size:12px;color:var(--color-text-heading);background:var(--color-surface)}
+.inspector-application-form textarea{resize:vertical}
+</style>
