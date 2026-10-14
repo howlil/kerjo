@@ -249,7 +249,7 @@ class JobRunner:
         budget = min(30, max(0, int(os.getenv("KERJO_ENRICH_LIMIT", "12"))))
         attempted = 0
         for job in matched_jobs:
-            if job.description_status == "complete":
+            if job.description_status == "complete" and job.posted_at:
                 continue
             if not allowed_detail_url(job.url):
                 job.description_status = "partial" if job.description else "missing"
