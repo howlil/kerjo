@@ -1,110 +1,25 @@
 <script>
-  import Icon from './Icon.svelte';
-
   let { job } = $props();
-
-  function formatDateTime(isoStr) {
-    if (!isoStr) return 'Tidak disebutkan';
-    try {
-      const d = new Date(isoStr);
-      return d.toLocaleDateString('id-ID', {
-        day: 'numeric',
-        month: 'short',
-        year: 'numeric'
-      }) + ' ' + d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
-    } catch {
-      return isoStr;
-    }
-  }
-
-  function getRelativeTime(isoStr) {
-    if (!isoStr) return null;
-    try {
-      const d = new Date(isoStr);
-      const diffMs = Date.now() - d.getTime();
-      const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-      if (diffHours < 1) return 'Kurang dari 1 jam lalu';
-      if (diffHours < 24) return `${diffHours} jam lalu`;
-      const diffDays = Math.floor(diffHours / 24);
-      if (diffDays === 1) return 'Kemarin';
-      return `${diffDays} hari lalu`;
-    } catch {
-      return null;
-    }
+  function fullDate(value){
+    if(!value)return 'Waktu tidak tersedia';
+    const d=new Date(value);
+    if(Number.isNaN(d.getTime()))return value;
+    return d.toLocaleDateString('id-ID',{day:'numeric',month:'short',year:'numeric'})+' '+d.toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'});
   }
 </script>
-
-<div class="relative pl-6 space-y-6 before:absolute before:left-[11px] before:top-2 before:bottom-2 before:w-[2px] before:bg-[var(--color-border)]">
-  <!-- Step 1: Posting Date -->
-  <div class="relative group">
-    <div class="absolute -left-6 top-0.5 w-[22px] height-[22px] rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] flex items-center justify-center text-[var(--color-text-secondary)]">
-      <Icon name="calendar" size={11} />
-    </div>
-    <div class="space-y-0.5">
-      <div class="flex items-center gap-2">
-        <span class="text-xs font-semibold text-[var(--color-text-heading)]">Diposting Perekrut</span>
-        {#if getRelativeTime(job.posted_at)}
-          <span class="text-[10px] font-mono px-2 py-0.5 rounded-full bg-[var(--color-surface-muted)] text-[var(--color-text-muted)] border border-[var(--color-border)]">
-            {getRelativeTime(job.posted_at)}
-          </span>
-        {/if}
-      </div>
-      <p class="text-[11px] font-mono text-[var(--color-text-secondary)]">
-        {formatDateTime(job.posted_at || job.first_seen_at)}
-      </p>
-      <p class="text-[11px] text-[var(--color-text-muted)]">
-        Terbit di platform {job.source || 'Portal Karir'}
-      </p>
-    </div>
-  </div>
-
-  <!-- Step 2: Discovered / Indexed -->
-  <div class="relative group">
-    <div class="absolute -left-6 top-0.5 w-[22px] height-[22px] rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] flex items-center justify-center text-[var(--color-text-secondary)]">
-      <Icon name="clock" size={11} />
-    </div>
-    <div class="space-y-0.5">
-      <div class="flex items-center gap-2">
-        <span class="text-xs font-semibold text-[var(--color-text-heading)]">Ditemukan Scraper</span>
-        {#if job.is_new}
-          <span class="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-black text-white border border-black">
-            NEW
-          </span>
-        {/if}
-      </div>
-      <p class="text-[11px] font-mono text-[var(--color-text-secondary)]">
-        {formatDateTime(job.first_seen_at)}
-      </p>
-      <p class="text-[11px] text-[var(--color-text-muted)]">
-        Otomatis di-indeks & diekstrak pengalamannya
-      </p>
-    </div>
-  </div>
-
-  <!-- Step 3: Current Status & Verification -->
-  <div class="relative group">
-    <div class="absolute -left-6 top-0.5 w-[22px] height-[22px] rounded-full border border-black bg-black flex items-center justify-center text-white">
-      <span class="w-1.5 h-1.5 rounded-full bg-white animate-pulse"></span>
-    </div>
-    <div class="space-y-0.5">
-      <div class="flex items-center gap-2">
-        <span class="text-xs font-semibold text-[var(--color-text-heading)]">Status Loker</span>
-        <span class="text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full bg-black text-white border border-black">
-          Aktif
-        </span>
-      </div>
-      {#if job.experience_level && job.experience_level !== 'unspecified'}
-        <div class="pt-1 flex flex-wrap gap-1.5 items-center">
-          <span class="text-[10px] font-mono px-2 py-0.5 rounded-full bg-black text-white border border-black">
-            Level: {job.experience_level.toUpperCase()}
-          </span>
-          {#if job.experience_raw}
-            <span class="text-[10px] font-mono px-2 py-0.5 rounded-full bg-neutral-100 text-neutral-800 border border-neutral-300">
-              Syarat: {job.experience_raw}
-            </span>
-          {/if}
-        </div>
-      {/if}
-    </div>
-  </div>
-</div>
+<ol class="timeline">
+  <li><strong>Diposting perekrut</strong><time>{fullDate(job.posted_at || job.first_seen_at)}</time><p>Platform {job.source || 'tidak diketahui'}</p></li>
+  <li><strong>Ditemukan scraper</strong><time>{fullDate(job.first_seen_at)}</time><p>Posisi berhasil terindeks</p></li>
+  <li class="timeline-current"><strong>Status dalam Kerjo</strong><time>{job.is_new ? 'Belum dilihat' : 'Sudah dilihat'}</time><p>Status live di portal sumber belum diverifikasi</p></li>
+</ol>
+<style>
+.timeline{padding:0 0 0 24px;margin:0;list-style:none}
+.timeline li{position:relative;padding-bottom:20px}
+.timeline li:last-child{padding-bottom:0}
+.timeline li:not(:last-child)::before{content:"";position:absolute;top:12px;bottom:0;left:-19px;border-left:1px solid var(--color-border)}
+.timeline li::after{content:"";position:absolute;left:-23px;top:5px;width:9px;height:9px;border:2px solid var(--color-border-strong);background:var(--color-page);border-radius:50%}
+.timeline li.timeline-current::after{background:var(--color-success);border-color:var(--color-positive-text)}
+.timeline strong{display:block;font-size:12px;font-weight:600;color:var(--color-text-heading)}
+.timeline time{display:block;margin-top:4px;font:400 11px/16px var(--font-mono);color:var(--color-text-muted)}
+.timeline p{font-size:11px;line-height:16px;color:var(--color-text-secondary);margin-top:4px}
+</style>

@@ -116,6 +116,20 @@
     <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"></polygon>
   {:else if name === 'activity'}
     <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+  {:else if name === 'bookmark'}
+    <path d="M6 4.5A1.5 1.5 0 0 1 7.5 3h9A1.5 1.5 0 0 1 18 4.5V21l-6-4-6 4z"></path>
+  {:else if name === 'grid'}
+    <rect x="3" y="3" width="7" height="7" rx="1"></rect>
+    <rect x="14" y="3" width="7" height="7" rx="1"></rect>
+    <rect x="3" y="14" width="7" height="7" rx="1"></rect>
+    <rect x="14" y="14" width="7" height="7" rx="1"></rect>
+  {:else if name === 'list'}
+    <path d="M9 6h12M9 12h12M9 18h12M4 6h.01M4 12h.01M4 18h.01"></path>
+  {:else if name === 'moon'}
+    <path d="M20 15.2A8.4 8.4 0 0 1 8.8 4a8.5 8.5 0 1 0 11.2 11.2Z"></path>
+  {:else if name === 'sun'}
+    <circle cx="12" cy="12" r="4"></circle>
+    <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M2 12h2m16 0h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"></path>
   {:else}
     <circle cx="12" cy="12" r="4"></circle>
   {/if}
