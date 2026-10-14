@@ -120,6 +120,8 @@ def fetch_dealls(keyword: str, page: int = 1, limit: int = 30) -> SourceResult:
             success=False,
             jobs=[],
             error_message=f"HTTP Error {e.code}: {e.reason}",
+        http_status=e.code,
+        retry_after_seconds=retry_after_seconds(e.headers.get("Retry-After") if e.headers else None),
         )
     except Exception as e:
         return SourceResult(
