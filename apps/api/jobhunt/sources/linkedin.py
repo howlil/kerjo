@@ -128,6 +128,8 @@ def fetch_linkedin(keyword: str, location: str = "Jakarta, Indonesia", start: in
             success=False,
             jobs=[],
             error_message=f"HTTP {e.code}: {status_desc}",
+        http_status=e.code,
+        retry_after_seconds=retry_after_seconds(e.headers.get("Retry-After") if e.headers else None),
         )
     except Exception as e:
         return SourceResult(
