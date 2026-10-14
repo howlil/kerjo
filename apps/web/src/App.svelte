@@ -275,7 +275,8 @@
       await api('/api/jobs/'+job.id+'/application',jsonOptions('PUT',{...payload,ids}));
       notice = 'Status lamaran diperbarui.';
       await Promise.all([loadJobs(),loadApplications()]);
-    } catch(e) { notice='Gagal memperbarui lamaran: '+e.message; }
+      return true;
+    } catch(e) { notice='Gagal memperbarui lamaran: '+e.message; return false; }
   }
 
   async function updatePipelineStatus(app,status) {
