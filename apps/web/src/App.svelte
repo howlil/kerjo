@@ -23,7 +23,9 @@
     kalibrr: true,
     linkedin: true,
     glints: true,
-    dealls: true
+    dealls: true,
+    karir: true,
+    techinasia: true
   });
 
   const areas = [
@@ -42,7 +44,9 @@
     kalibrr: 'bg-amber-100 text-amber-800 border-amber-200',
     linkedin: 'bg-sky-100 text-sky-800 border-sky-200',
     glints: 'bg-emerald-100 text-emerald-800 border-emerald-200',
-    dealls: 'bg-rose-100 text-rose-800 border-rose-200'
+    dealls: 'bg-rose-100 text-rose-800 border-rose-200',
+    karir: 'bg-orange-100 text-orange-800 border-orange-200',
+    techinasia: 'bg-red-100 text-red-800 border-red-200'
   };
 
   async function loadJobs() {
@@ -200,7 +204,7 @@
         </span>
       </div>
       <p class="text-sm text-slate-500 mt-1">
-        Aggregator lowongan kerja lokal (JobStreet, Kalibrr, LinkedIn, Glints, Dealls)
+        Aggregator lowongan kerja lokal (JobStreet, Kalibrr, LinkedIn, Glints, Dealls, Karir.com, Tech in Asia)
       </p>
     </div>
 
@@ -293,6 +297,8 @@
         <option value="linkedin">LinkedIn</option>
         <option value="glints">Glints</option>
         <option value="dealls">Dealls</option>
+        <option value="karir">Karir.com</option>
+        <option value="techinasia">Tech in Asia</option>
       </select>
 
       <!-- Only NEW toggle -->
@@ -502,6 +508,14 @@
               <label class="flex items-center gap-2">
                 <input type="checkbox" bind:checked={newSources.dealls} class="rounded text-indigo-600" />
                 Dealls
+              </label>
+              <label class="flex items-center gap-2">
+                <input type="checkbox" bind:checked={newSources.karir} class="rounded text-indigo-600" />
+                Karir.com
+              </label>
+              <label class="flex items-center gap-2">
+                <input type="checkbox" bind:checked={newSources.techinasia} class="rounded text-indigo-600" />
+                Tech in Asia
               </label>
             </div>
           </div>

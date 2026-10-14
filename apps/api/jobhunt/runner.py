@@ -9,6 +9,8 @@ from jobhunt.sources.kalibrr import fetch_kalibrr
 from jobhunt.sources.linkedin import fetch_linkedin
 from jobhunt.sources.glints import fetch_glints
 from jobhunt.sources.dealls import fetch_dealls
+from jobhunt.sources.karir import fetch_karir
+from jobhunt.sources.techinasia import fetch_techinasia
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +20,8 @@ DEFAULT_SOURCES: Dict[str, Callable[[str], SourceResult]] = {
     "linkedin": lambda kw: fetch_linkedin(kw),
     "glints": lambda kw: fetch_glints(kw),
     "dealls": lambda kw: fetch_dealls(kw),
+    "karir": lambda kw: fetch_karir(kw),
+    "techinasia": lambda kw: fetch_techinasia(kw),
 }
 
 class LockAcquireError(Exception):
