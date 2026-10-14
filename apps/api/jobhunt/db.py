@@ -105,6 +105,11 @@ class Database:
                 ("role_category", "TEXT DEFAULT 'other'"),
                 ("company_logo", "TEXT"),
                 ("work_mode", "TEXT DEFAULT 'unknown'"),
+                ("description_status", "TEXT NOT NULL DEFAULT 'missing'"),
+                ("description_source", "TEXT"),
+                ("application_url", "TEXT"),
+                ("application_evidence", "TEXT"),
+                ("origin_url", "TEXT"),
             ]
             for col_name, col_def in migrations:
                 if col_name not in existing_cols:
@@ -227,9 +232,15 @@ class Database:
 
                 # Check if exists
                 existing = conn.execute(
-                    "SELECT id, is_new FROM jobs WHERE source = ? AND external_id = ?",
+                    "SELECT id, is_new, description_status FROM jobs WHERE source = ? AND external_id = ?",
                     (job.source, job.external_id),
                 ).fetchone()
+
+                # Never overwrite a previously complete description with a new card snippet.
+                preserve_full = bool(existing and existing["description_status"] == "complete"
+                                     and job.description_status != "complete")
+                if preserve_full:
+                    job.description = None
 
                 if existing:
                     # Update metadata & last_seen
@@ -312,6 +323,18 @@ class Database:
                             now,
                             now,
                         ),
+                    )
+
+                if not preserve_full:
+                    conn.execute(
+                        """UPDATE jobs SET description_status = ?, description_source = ?,
+                                  application_url = COALESCE(?, application_url),
+                                  application_evidence = COALESCE(?, application_evidence),
+                                  origin_url = COALESCE(?, origin_url)
+                           WHERE source = ? AND external_id = ?""",
+                        (job.description_status or ("partial" if job.description else "missing"),
+                         job.description_source, job.application_url, job.application_evidence,
+                         job.origin_url, job.source, job.external_id),
                     )
 
         return new_count, len(jobs)
