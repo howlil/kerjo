@@ -111,6 +111,8 @@ def fetch_kalibrr(keyword: str, limit: int = 30, offset: int = 0, retries: int =
     )
 
     last_error = ""
+    last_status = None
+    last_retry_after = None
     for attempt in range(retries):
         try:
             with urllib.request.urlopen(req, timeout=40) as response:
@@ -120,7 +122,7 @@ def fetch_kalibrr(keyword: str, limit: int = 30, offset: int = 0, retries: int =
                         success=False,
                         jobs=[],
                         error_message=f"HTTP status {response.status}",
-                    http_status=response.status,
+                        http_status=response.status,
                     )
                 payload = json.loads(response.read().decode("utf-8"))
                 if not isinstance(payload, dict) or not isinstance(payload.get("jobs"), list):
@@ -129,6 +131,8 @@ def fetch_kalibrr(keyword: str, limit: int = 30, offset: int = 0, retries: int =
                 return SourceResult(source="kalibrr", success=True, jobs=jobs, raw_count=len(payload["jobs"]), pages_fetched=1)
         except urllib.error.HTTPError as e:
             last_error = f"HTTP Error {e.code}: {e.reason}"
+            last_status = e.code
+            last_retry_after = retry_after_seconds(e.headers.get("Retry-After") if e.headers else None)
             break
         except Exception as e:
             last_error = str(e)
@@ -141,4 +145,6 @@ def fetch_kalibrr(keyword: str, limit: int = 30, offset: int = 0, retries: int =
         success=False,
         jobs=[],
         error_message=last_error or "Unknown error",
+        http_status=last_status,
+        retry_after_seconds=last_retry_after,
     )
