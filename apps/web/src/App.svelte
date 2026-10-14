@@ -41,7 +41,7 @@
   let visibleJobs = $derived(jobs);
 
   const sourceLabels = [
-    ['jobstreet','JobStreet'],['kalibrr','Kalibrr'],['linkedin','LinkedIn'],
+    ['jobstreet','JobStreet'],['kalibrr','Kalibrr'],['linkedin_posts','LinkedIn Posts (API)'],['ats','Company ATS'],
     ['glints','Glints'],['dealls','Dealls'],['karir','Karir.com'],['techinasia','Tech in Asia']
   ];
 
@@ -56,12 +56,16 @@
 
   // Add search modal
   let showAddSearch = $state(false);
+  let showRecruiterImport = $state(false);
+  let importingPost = $state(false);
+  let recruiterPost = $state({post_url:'',text:'',title:'',company:'',location:'',posted_at:'',apply_url:''});
   let newKeyword = $state('');
   let newArea = $state('all');
   let newSources = $state({
     jobstreet: true,
     kalibrr: true,
-    linkedin: true,
+    linkedin_posts: false,
+    ats: false,
     glints: true,
     dealls: true,
     karir: true,
@@ -103,7 +107,9 @@
     { id: 'all', label: 'Semua Situs' },
     { id: 'jobstreet', label: 'JobStreet' },
     { id: 'kalibrr', label: 'Kalibrr' },
-    { id: 'linkedin', label: 'LinkedIn' },
+    { id: 'linkedin', label: 'LinkedIn (legacy)' },
+    { id: 'linkedin_posts', label: 'LinkedIn recruiter posts' },
+    { id: 'ats', label: 'Company ATS' },
     { id: 'glints', label: 'Glints' },
     { id: 'dealls', label: 'Dealls' },
     { id: 'karir', label: 'Karir.com' },
@@ -249,6 +255,23 @@
       currentRun = {id:result.run_id,status:'queued',processed_tasks:0,total_tasks:0,jobs_new:0};
       notice = 'Manual scrape dimulai. Hanya lowongan dengan tanggal publikasi ≤14 hari yang akan ditampilkan.';
     } catch(e) { runningScraper=false; notice='Gagal menjalankan scraper: '+e.message; }
+  }
+
+  async function submitRecruiterPost(event) {
+    event.preventDefault();
+    if (importingPost) return;
+    importingPost = true;
+    try {
+      const result = await api('/api/linkedin-posts', jsonOptions('POST', recruiterPost));
+      notice = result.new ? 'Posting dengan link lamaran ditambahkan.' : 'Posting diproses tanpa lowongan baru.';
+      showRecruiterImport = false;
+      recruiterPost = {post_url:'',text:'',title:'',company:'',location:'',posted_at:'',apply_url:''};
+      await Promise.all([loadJobs(),loadCompanies()]);
+    } catch (error) {
+      notice = 'Posting ditolak: ' + error.message;
+    } finally {
+      importingPost = false;
+    }
   }
 
   function selectJob(job) {
@@ -461,6 +484,7 @@
       </button>
       {#if currentView==='discovery'}
       <span class="desktop-action"><Button onclick={markAllSeen}><Icon name="checkCircle" size={14}/>Tandai dilihat</Button></span>
+      <Button onclick={() => showRecruiterImport = true}>Impor post HR</Button>
       <Button onclick={() => showAddSearch = true}><Icon name="plus" size={14}/><span class="desktop-action">Tambah pencarian</span></Button>
       {/if}
       <Button variant="primary" disabled={runningScraper} onclick={triggerRun}><Icon name="refresh" size={14}/><span>{runningScraper ? 'Scraping…' : 'Scrape manual'}</span></Button>
@@ -580,6 +604,27 @@
   </div>
 {/if}
 
+{#if showRecruiterImport}
+  <div class="ui-modal-backdrop" role="presentation">
+    <section class="ui-modal" role="dialog" aria-modal="true" aria-labelledby="hr-import-title">
+      <div class="ui-modal-header"><h2 id="hr-import-title">Impor posting HR</h2>
+        <button type="button" class="ui-icon-button" onclick={() => showRecruiterImport = false} aria-label="Tutup dialog"><Icon name="x" size={16}/></button></div>
+      <p class="recruiter-help">Hanya posting 14 hari terakhir dengan link lamaran langsung. Permintaan "comment interested" saja ditolak.</p>
+      <form onsubmit={submitRecruiterPost}>
+        <div class="ui-modal-field"><label for="hr-url">URL LinkedIn post</label><input id="hr-url" class="ui-input" type="url" required bind:value={recruiterPost.post_url}/></div>
+        <div class="ui-modal-field"><label for="hr-company">Perusahaan</label><input id="hr-company" class="ui-input" required maxlength="180" bind:value={recruiterPost.company}/></div>
+        <div class="ui-modal-field"><label for="hr-title">Posisi (opsional)</label><input id="hr-title" class="ui-input" maxlength="180" placeholder="Backend Engineer" bind:value={recruiterPost.title}/></div>
+        <div class="ui-modal-field"><label for="hr-location">Lokasi</label><input id="hr-location" class="ui-input" maxlength="200" placeholder="Jakarta Selatan / Remote" bind:value={recruiterPost.location}/></div>
+        <div class="ui-modal-field"><label for="hr-post-date">Tanggal posting</label><input id="hr-post-date" class="ui-input" type="date" required bind:value={recruiterPost.posted_at}/></div>
+        <div class="ui-modal-field"><label for="hr-text">Teks posting</label><textarea id="hr-text" class="ui-input" rows="5" required maxlength="20000" placeholder="Tempel teks dan link yang dibagikan HR" bind:value={recruiterPost.text}></textarea></div>
+        <div class="ui-modal-field"><label for="hr-apply">Link lamaran (opsional jika ada dalam teks)</label><input id="hr-apply" class="ui-input" type="url" bind:value={recruiterPost.apply_url}/></div>
+        <div class="ui-modal-actions"><Button onclick={() => showRecruiterImport = false}>Batal</Button>
+          <Button type="submit" variant="primary" disabled={importingPost}>{importingPost ? 'Memeriksa…' : 'Impor posting'}</Button></div>
+      </form>
+    </section>
+  </div>
+{/if}
+
 {#if showAddSearch}
   <div class="ui-modal-backdrop" role="presentation">
     <section class="ui-modal" role="dialog" aria-modal="true" aria-labelledby="add-search-title">
@@ -614,6 +659,7 @@
 {/if}
 
 <style>
+.recruiter-help{font-size:12px;line-height:1.5;color:var(--color-text-secondary);margin:12px 0}
 .app-view-tabs{display:flex;align-items:center;gap:3px;margin-left:auto;flex-shrink:0}
 .app-view-tabs button{padding:6px 9px;border-radius:var(--radius-md);color:var(--color-text-secondary);font-size:11px;font-weight:650;cursor:pointer;white-space:nowrap}
 .app-view-tabs button:hover{background:var(--color-surface-hover)}
