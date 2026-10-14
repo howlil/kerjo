@@ -133,6 +133,10 @@ class FeatureStore:
                     processed_tasks INTEGER NOT NULL DEFAULT 0,
                     jobs_found INTEGER NOT NULL DEFAULT 0,
                     jobs_new INTEGER NOT NULL DEFAULT 0,
+                    jobs_recent INTEGER NOT NULL DEFAULT 0,
+                    filtered_old INTEGER NOT NULL DEFAULT 0,
+                    filtered_unknown INTEGER NOT NULL DEFAULT 0,
+                    filtered_future INTEGER NOT NULL DEFAULT 0,
                     errors INTEGER NOT NULL DEFAULT 0,
                     error_message TEXT,
                     created_at TEXT NOT NULL,
@@ -140,6 +144,10 @@ class FeatureStore:
                     finished_at TEXT
                 );
             """)
+            columns = {row["name"] for row in conn.execute("PRAGMA table_info(run_batches)")}
+            for name in ("jobs_recent", "filtered_old", "filtered_unknown", "filtered_future"):
+                if name not in columns:
+                    conn.execute(f"ALTER TABLE run_batches ADD COLUMN {name} INTEGER NOT NULL DEFAULT 0")
             conn.execute("UPDATE run_batches SET status='failed', finished_at=?, error_message='Worker interrupted by server restart' WHERE status IN ('running','queued')", (utc_now(),))
 
     def get_preferences(self):
@@ -308,7 +316,8 @@ class FeatureStore:
 
     def update_batch(self, run_id, **kwargs):
         keys = {"status", "total_tasks", "processed_tasks", "jobs_found",
-                "jobs_new", "errors", "error_message", "started_at", "finished_at"}
+                "jobs_new", "jobs_recent", "filtered_old", "filtered_unknown",
+                "filtered_future", "errors", "error_message", "started_at", "finished_at"}
         if not kwargs or set(kwargs) - keys:
             raise ValueError("Invalid batch update")
         with self.db._get_connection() as conn:
