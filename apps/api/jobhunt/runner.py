@@ -112,7 +112,12 @@ class JobRunner:
         max_workers: Optional[int] = None,
     ):
         self.db = db or Database()
-        self.sources = sources if sources is not None else DEFAULT_SOURCES
+        self.sources = sources if sources is not None else dict(DEFAULT_SOURCES)
+        if sources is None:
+            configured = self.db.get_ats_boards()
+            if configured:
+                company_boards = [(entry["provider"], entry["slug"]) for entry in configured]
+                self.sources["ats"] = lambda kw: fetch_ats(kw, boards=company_boards)
         self.lock_file = lock_file
         try:
             configured = int(os.getenv("KERJO_MAX_WORKERS", "3")) if max_workers is None else int(max_workers)

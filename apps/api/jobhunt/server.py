@@ -9,7 +9,7 @@ import urllib.parse
 import logging
 
 from jobhunt.db import Database
-from jobhunt.features import FeatureStore, utc_now
+from jobhunt.features import FeatureStore, ProtectedJobsError, utc_now
 from jobhunt.runner import JobRunner, RunnerLock, LockAcquireError, DEFAULT_SOURCES
 from jobhunt.dedup import group_dedup_jobs
 from jobhunt.sources.linkedin_posts import make_post_job
@@ -89,6 +89,12 @@ class JobhuntRequestHandler(http.server.BaseHTTPRequestHandler):
         path = parsed.path
         query = urllib.parse.parse_qs(parsed.query)
         try:
+            if path == "/api/ats-boards":
+                self._send_json({"boards": self.db.get_ats_boards()})
+                return
+            if path == "/api/jobs/inventory":
+                self._send_json(self.features.scraped_inventory())
+                return
             if path == "/api/jobs":
                 limit = self._integer(query.get("limit", ["100"])[0], "limit", 1, 500)
                 offset = self._integer(query.get("offset", ["0"])[0], "offset", 0, 100000)
@@ -216,6 +222,13 @@ class JobhuntRequestHandler(http.server.BaseHTTPRequestHandler):
             return
         path = urllib.parse.urlparse(self.path).path
         try:
+            if path == "/api/ats-boards":
+                data = self._read_json_body()
+                if set(data) != {"provider", "slug"}:
+                    raise ValueError("Provide provider and company board slug")
+                board_id = self.db.add_ats_board(data["provider"], data["slug"])
+                self._send_json({"id": board_id}, 201)
+                return
             if path == "/api/linkedin-posts":
                 data = self._read_json_body()
                 posts = data.get("posts")
@@ -345,6 +358,42 @@ class JobhuntRequestHandler(http.server.BaseHTTPRequestHandler):
         if not self._guard_write():
             return
         path = urllib.parse.urlparse(self.path).path
+        if path == "/api/jobs":
+            try:
+                payload = self._read_json_body()
+                if payload.get("confirm") != "DELETE":
+                    raise ValueError("Deletion requires explicit confirmation")
+                if not self.run_gate.acquire(blocking=False):
+                    self._send_json({"error": "Scraping sedang berjalan. Hapus setelah run selesai."}, 409)
+                    return
+                try:
+                    with RunnerLock():
+                        response = self.features.delete_scraped_jobs(
+                            ids=payload.get("ids"), scope=payload.get("scope"),
+                            include_tracked=payload.get("include_tracked", False),
+                        )
+                finally:
+                    self.run_gate.release()
+                self._send_json(response)
+            except ProtectedJobsError as exc:
+                self._send_json({"error": str(exc), "protected_count": exc.count,
+                                 "protected_ids": exc.ids}, 409)
+            except LockAcquireError:
+                self._send_json({"error": "A collector process is active; deletion blocked"}, 409)
+            except LookupError as exc:
+                self._send_json({"error": str(exc)}, 404)
+            except (ValueError, TypeError) as exc:
+                self._send_json({"error": str(exc)}, 400)
+            return
+        if path.startswith("/api/ats-boards/"):
+            try:
+                board_id = self._integer(path.split("/")[-1], "board ID", 1)
+                deleted = self.db.delete_ats_board(board_id)
+                self._send_json({"deleted": deleted} if deleted
+                                else {"error": "ATS board not found"}, 200 if deleted else 404)
+            except (ValueError, TypeError) as exc:
+                self._send_json({"error": str(exc)}, 400)
+            return
         if path.startswith("/api/searches/"):
             try:
                 search_id = self._integer(path.split("/")[3], "search ID", 1)

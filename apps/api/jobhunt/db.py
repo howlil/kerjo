@@ -45,6 +45,14 @@ class Database:
                     updated_at TEXT NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS ats_boards (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    provider TEXT NOT NULL CHECK(provider IN ('ashby','greenhouse','lever')),
+                    slug TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    UNIQUE(provider,slug)
+                );
+
                 CREATE TABLE IF NOT EXISTS jobs (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     source TEXT NOT NULL,
@@ -133,6 +141,31 @@ class Database:
             conn.execute("CREATE INDEX IF NOT EXISTS idx_jobs_exp_level ON jobs(experience_level);")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_jobs_role_cat ON jobs(role_category);")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_jobs_company ON jobs(company);")
+
+    # ---------------- ATS company boards (configured through dashboard) ----------------
+    def get_ats_boards(self):
+        with self._get_connection() as conn:
+            return [dict(row) for row in conn.execute(
+                "SELECT id,provider,slug,created_at FROM ats_boards ORDER BY provider,slug")]
+
+    def add_ats_board(self, provider: str, slug: str):
+        import re
+        if type(provider) is not str or provider not in {"ashby","greenhouse","lever"}:
+            raise ValueError("Choose Ashby, Greenhouse, or Lever")
+        if type(slug) is not str or not re.fullmatch(r"[A-Za-z0-9_-]{2,90}", slug):
+            raise ValueError("Invalid company board slug")
+        with self._get_connection() as conn:
+            try:
+                cur = conn.execute(
+                    "INSERT INTO ats_boards(provider,slug,created_at) VALUES(?,?,?)",
+                    (provider, slug, datetime.datetime.now(datetime.timezone.utc).isoformat()))
+            except sqlite3.IntegrityError as exc:
+                raise ValueError("Board already configured") from exc
+            return cur.lastrowid
+
+    def delete_ats_board(self, board_id: int):
+        with self._get_connection() as conn:
+            return conn.execute("DELETE FROM ats_boards WHERE id=?", (board_id,)).rowcount
 
     # ---------------- Search Queries ----------------
     def create_search(self, keyword: str, area: str = "all", sources: Optional[List[str]] = None) -> int:

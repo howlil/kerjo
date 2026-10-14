@@ -2,6 +2,40 @@
 
 Local-first multi-source job discovery and application tracking: Python standard library API, SQLite, Svelte 5 and Vite.
 
+## Daily use: browser interface only
+
+On Windows, **double-click `Start-Kerjo.cmd`** from the repository folder.
+It checks Node/Python, installs frontend dependencies on first start, builds the
+current Svelte UI, starts the real local backend and opens
+http://127.0.0.1:8000 in your browser. Keep the launcher open while using
+Kerjo; closing it stops the local server. No CLI commands are needed for
+scraping or deleting results.
+
+In the browser:
+
+1. Go to **Discover > Tambah pencarian** to enable real provider sources.
+   The first click on Scrape sekarang seeds the default searches only if
+   there are no saved searches at all. Paused searches are never run.
+2. For public company boards, use **Sumber ATS**, add the actual
+   Ashby/Greenhouse/Lever company board slug, and enable Company ATS in your
+   saved searches. These are genuine provider requests, not seeded jobs.
+3. Click **Scrape sekarang**. POST /api/run starts the real manual worker.
+   Progress comes from /api/run/{id}; each processed source persists eligible
+   postings in SQLite before run counters advance. No fake/sample vacancy
+   rows are inserted. Zero results, unconfigured sources, blocked requests and
+   parser errors are reported explicitly.
+4. Use **Kelola hasil** to select and delete one or multiple listings or
+   **Kosongkan hasil scraping** to clear the local SQLite results (including
+   older/undated records not visible in Discover). A delete confirmation is
+   required. Saved jobs and applications are protected by default; checking
+   the explicit override also deletes linked application history permanently.
+
+The inspector provides **Hapus** for one displayed vacancy; verified duplicate
+cards may represent multiple provider rows and are deleted together from the
+group. After deletion the dashboard reloads from SQLite. Data deleted here
+may appear again after the next real scrape; there is no hidden suppression
+list. No automated/background schedules are installed by the app.
+
 ## Architecture
 
 Seven source adapters -> normalization and technical role classification -> SQLite (exact source/external-ID identity) -> conservative cross-provider dedup -> relevance ranking -> Svelte dashboard.
@@ -28,14 +62,11 @@ Open http://127.0.0.1:8000. The DB directory is created automatically. For hot r
 
 ## Manual collection: last 14 days
 
-**Kerjo never schedules scraping.** Click **Scrape sekarang** in the dashboard, or run:
-
-~~~powershell
-task scrape
-# or directly:
-$env:PYTHONPATH = "apps/api"
-python -m jobhunt run
-~~~
+**Kerjo never schedules scraping.** Buka aplikasi melalui
+**Start-Kerjo.cmd**, lalu klik **Scrape sekarang** di dashboard.
+Halaman **Scraping** menampilkan event hasil jaringan dan progress worker nyata;
+**Results Preview** hanya menampilkan lowongan yang benar-benar tersimpan di
+SQLite pada run tersebut. Tidak ada fake scraping atau hasil demo di produksi.
 
 A manual API/UI request starts a background **worker for that request only**, so the
 dashboard remains responsive. No timer, cron job, or Windows Task Scheduler is
@@ -120,6 +151,10 @@ environment variables, limitations, and verification protocol.
 
 | Route | Methods | Purpose |
 |---|---|---|
+| /api/jobs/inventory | GET | Count actual stored, protected and deletable SQLite records |
+| /api/jobs | DELETE | Explicit IDs (max 500) or all; protected rows require override |
+| /api/ats-boards | GET, POST | List and add official company ATS board slugs |
+| /api/ats-boards/{id} | DELETE | Remove board configuration without deleting fetched jobs |
 | /api/jobs | GET | Filter jobs; sort=recent or match; saved=1; offset and limit; returns accurate total after dedup |
 | /api/searches | GET, POST | Saved search rules |
 | /api/searches/{id}/toggle | PUT | Toggle active search |

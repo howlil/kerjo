@@ -104,6 +104,14 @@ def rank_job(job, preferences, now=None):
             "reasons": reasons, "blockers": blockers, "unknowns": unknown}
 
 
+class ProtectedJobsError(ValueError):
+    """Deletion requires explicit approval before removing saved/application records."""
+    def __init__(self, count, ids=None):
+        self.count = count
+        self.ids = ids or []
+        super().__init__(f"{count} selected job(s) are saved or have application history")
+
+
 class FeatureStore:
     def __init__(self, database):
         self.db = database
@@ -320,6 +328,81 @@ class FeatureStore:
             except (KeyError, TypeError, ValueError, AttributeError):
                 job["freshness"] = "unknown"
         return jobs
+
+    def scraped_inventory(self):
+        """Counts real persisted SQLite jobs, not search-card or fixture estimates."""
+        with self.db._get_connection() as conn:
+            row = conn.execute("""
+                SELECT COUNT(*) AS total,
+                       SUM(CASE WHEN EXISTS (SELECT 1 FROM saved_jobs s WHERE s.job_id=j.id)
+                                     OR EXISTS (SELECT 1 FROM applications a WHERE a.job_id=j.id)
+                                THEN 1 ELSE 0 END) AS protected
+                FROM jobs j
+            """).fetchone()
+        total = int(row["total"] or 0)
+        protected = int(row["protected"] or 0)
+        return {"total": total, "protected": protected, "deletable": total - protected}
+
+    def delete_scraped_jobs(self, *, ids=None, scope=None, include_tracked=False):
+        """Delete stored rows in one transaction; saved/applied records are protected by default.
+
+        Passing exact raw IDs avoids accidentally deleting filtered-out or unrelated
+        records. The explicit 'all' scope includes old and undated scraped rows.
+        Cascading application deletion is permitted only with include_tracked=True.
+        """
+        if type(include_tracked) is not bool:
+            raise ValueError("include_tracked must be a boolean")
+        if scope == "all":
+            if ids is not None:
+                raise ValueError("Do not combine scope=all with ids")
+        elif scope is None:
+            if (not isinstance(ids, list) or not 1 <= len(ids) <= 500 or
+                    any(type(item) is not int or item <= 0 for item in ids)):
+                raise ValueError("Choose 1-500 valid job IDs")
+            if len(set(ids)) != len(ids):
+                raise ValueError("Duplicate job IDs are not allowed")
+        else:
+            raise ValueError("Deletion scope must be 'all' or explicit ids")
+        with self.db._get_connection() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            if scope == "all":
+                before = conn.execute("SELECT COUNT(*) FROM jobs").fetchone()[0]
+                if include_tracked:
+                    conn.execute("DELETE FROM jobs")
+                    deleted = before
+                    protected = 0
+                else:
+                    protected = conn.execute("""
+                        SELECT COUNT(*) FROM jobs j
+                        WHERE EXISTS (SELECT 1 FROM saved_jobs s WHERE s.job_id=j.id)
+                           OR EXISTS (SELECT 1 FROM applications a WHERE a.job_id=j.id)
+                    """).fetchone()[0]
+                    conn.execute("""
+                        DELETE FROM jobs
+                        WHERE NOT EXISTS (SELECT 1 FROM saved_jobs s WHERE s.job_id=jobs.id)
+                          AND NOT EXISTS (SELECT 1 FROM applications a WHERE a.job_id=jobs.id)
+                    """)
+                    deleted = before - protected
+            else:
+                placeholders = ",".join("?" for _ in ids)
+                rows = conn.execute(
+                    "SELECT id FROM jobs WHERE id IN (" + placeholders + ")", ids
+                ).fetchall()
+                if len(rows) != len(ids):
+                    raise LookupError("One or more selected jobs no longer exist")
+                protected_ids = [row["id"] for row in conn.execute(
+                    """SELECT j.id FROM jobs j
+                       WHERE j.id IN (""" + placeholders + """)
+                         AND (EXISTS (SELECT 1 FROM saved_jobs s WHERE s.job_id=j.id)
+                          OR EXISTS (SELECT 1 FROM applications a WHERE a.job_id=j.id))""",
+                    ids,
+                )]
+                if protected_ids and not include_tracked:
+                    raise ProtectedJobsError(len(protected_ids), protected_ids)
+                conn.execute("DELETE FROM jobs WHERE id IN (" + placeholders + ")", ids)
+                deleted, protected = len(ids), 0
+        return {"deleted": deleted, "protected_skipped": protected,
+                "scope": scope or "selected", "include_tracked": include_tracked}
 
     def set_saved(self, job_ids, saved):
         ids = sorted({v for v in job_ids if type(v) is int and v > 0})
