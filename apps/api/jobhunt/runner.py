@@ -63,43 +63,62 @@ class LockAcquireError(Exception):
     pass
 
 class RunnerLock:
+    """Cross-process advisory lock.
+
+    Uses operating-system locks instead of interpreting a PID file. The kernel
+    releases ownership on crash; the lock *file remains* to avoid an inode
+    replacement race where two writers both believe they own the lock.
+    """
     def __init__(self, lock_file: str = "data/runner.lock"):
         self.lock_file = lock_file
         self._fd: Optional[int] = None
 
     def __enter__(self):
-        parent = pathlib.Path(self.lock_file).parent
-        parent.mkdir(parents=True, exist_ok=True)
+        path = pathlib.Path(self.lock_file)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        self._fd = os.open(str(path), os.O_CREAT | os.O_RDWR, 0o600)
         try:
-            # Atomic file creation
-            self._fd = os.open(self.lock_file, os.O_CREAT | os.O_EXCL | os.O_RDWR)
-            os.write(self._fd, str(os.getpid()).encode())
-        except FileExistsError:
-            # Recover a dead worker's orphan lock, but never steal from a live PID.
-            try:
-                pid = int(pathlib.Path(self.lock_file).read_text().strip())
+            if os.name == "nt":
+                import msvcrt
+                # Lock byte zero. Never call os.kill(pid, 0) on Windows.
+                if os.fstat(self._fd).st_size == 0:
+                    os.write(self._fd, b"\0")
+                os.lseek(self._fd, 0, os.SEEK_SET)
                 try:
-                    os.kill(pid, 0)
-                except ProcessLookupError:
-                    pathlib.Path(self.lock_file).unlink(missing_ok=True)
-                    self._fd = os.open(self.lock_file, os.O_CREAT | os.O_EXCL | os.O_RDWR)
-                    os.write(self._fd, str(os.getpid()).encode())
-                else:
-                    raise LockAcquireError("Another runner process is already running.")
-            except (ValueError, OSError) as exc:
-                raise LockAcquireError("Runner lock is present; inspect " + self.lock_file) from exc
-        return self
+                    msvcrt.locking(self._fd, msvcrt.LK_NBLCK, 1)
+                except OSError as exc:
+                    raise LockAcquireError("Another runner process is already running.") from exc
+            else:
+                import fcntl
+                try:
+                    fcntl.flock(self._fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except BlockingIOError as exc:
+                    raise LockAcquireError("Another runner process is already running.") from exc
+            # Diagnostic PID, not an authority to delete files or kill processes.
+            os.lseek(self._fd, 0, os.SEEK_SET)
+            os.write(self._fd, str(os.getpid()).encode("ascii") + b"\n")
+            os.ftruncate(self._fd, os.lseek(self._fd, 0, os.SEEK_CUR))
+            os.fsync(self._fd)
+            return self
+        except BaseException:
+            os.close(self._fd)
+            self._fd = None
+            raise
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        if self._fd is not None:
-            try:
-                os.close(self._fd)
-            except OSError:
-                pass
-            try:
-                os.remove(self.lock_file)
-            except OSError:
-                pass
+        if self._fd is None:
+            return
+        fd, self._fd = self._fd, None
+        try:
+            if os.name == "nt":
+                import msvcrt
+                os.lseek(fd, 0, os.SEEK_SET)
+                msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+            else:
+                import fcntl
+                fcntl.flock(fd, fcntl.LOCK_UN)
+        finally:
+            os.close(fd)
 
 class JobRunner:
     def __init__(
@@ -118,10 +137,15 @@ class JobRunner:
         """
         searches = self.db.get_searches(active_only=True)
         if not searches:
-            logger.info("No active searches found. Seeding default technical searches.")
-            self.db.seed_default_searches()
-            searches = self.db.get_searches(active_only=True)
+            if not self.db.get_searches():
+                logger.info("Fresh database; seeding default technical searches.")
+                self.db.seed_default_searches()
+                searches = self.db.get_searches(active_only=True)
+            else:
+                logger.info("All saved searches are paused; skipping run.")
         if not searches:
+            if on_progress:
+                on_progress(None, 0, 0)
             return []
 
         results = []
