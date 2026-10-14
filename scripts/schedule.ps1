@@ -8,43 +8,28 @@ param(
 )
 
 $TaskName = "KerjoHourlyScraper"
-$PythonExe = (Get-Command python).Source
 $ProjectDir = (Resolve-Path "$PSScriptRoot\..").Path
 $RunScript = "$ProjectDir\scripts\run_worker.bat"
 
 if ($Action -eq "install") {
-    # Generate run_worker.bat helper
-    $BatContent = @"
-@echo off
-cd /d "$ProjectDir"
-set PYTHONPATH=apps\api
-"$PythonExe" -m jobhunt run >> "$ProjectDir\data\cron.log" 2>&1
-"@
-    Set-Content -Path $RunScript -Value $BatContent -Encoding ASCII
-
-    Write-Host "[*] Creating scheduled task '$TaskName' to run every 1 hour..." -ForegroundColor Cyan
-
-    $tr = "`"$RunScript`""
-    $res = schtasks /create /tn "$TaskName" /tr $tr /sc HOURLY /mo 1 /f
-    Write-Host $res
-
-    Write-Host "[+] Task '$TaskName' successfully registered! It will run automatically every hour." -ForegroundColor Green
-    Write-Host "    Log file: $ProjectDir\data\cron.log" -ForegroundColor Yellow
+    if (!(Test-Path $RunScript)) { throw "Worker script missing: $RunScript" }
+    New-Item -ItemType Directory -Path (Join-Path $ProjectDir "data") -Force | Out-Null
+    Write-Host "[*] Registering hourly task $TaskName..." -ForegroundColor Cyan
+    $tr = 'cmd.exe /d /c ""' + $RunScript + '""'
+    schtasks.exe /create /tn $TaskName /tr $tr /sc HOURLY /mo 1 /f
+    if ($LASTEXITCODE -ne 0) { throw "schtasks.exe failed to register $TaskName (exit $LASTEXITCODE)" }
+    Write-Host "[+] Task registered. Confirm via status." -ForegroundColor Green
 }
 elseif ($Action -eq "uninstall") {
-    Write-Host "[*] Unregistering scheduled task '$TaskName'..." -ForegroundColor Cyan
-    $res = schtasks /delete /tn "$TaskName" /f
-    Write-Host $res
-    if (Test-Path $RunScript) {
-        Remove-Item $RunScript -Force
-    }
-    Write-Host "[-] Task '$TaskName' unregistered." -ForegroundColor Green
+    schtasks.exe /delete /tn $TaskName /f
+    if ($LASTEXITCODE -ne 0) { throw "schtasks.exe failed to unregister $TaskName (exit $LASTEXITCODE)" }
+    # Do not delete tracked scripts/run_worker.bat on uninstall.
+    Write-Host "[-] Scheduled task unregistered." -ForegroundColor Green
 }
 elseif ($Action -eq "run-now") {
-    Write-Host "[*] Triggering task '$TaskName' now..." -ForegroundColor Cyan
-    $res = schtasks /run /tn "$TaskName"
-    Write-Host $res
-    Write-Host "[+] Task triggered. Check $ProjectDir\data\cron.log for progress." -ForegroundColor Green
+    schtasks.exe /run /tn $TaskName
+    if ($LASTEXITCODE -ne 0) { throw "schtasks.exe failed to start $TaskName (exit $LASTEXITCODE)" }
+    Write-Host "[+] Scheduled task started; see data/cron.log." -ForegroundColor Green
 }
 elseif ($Action -eq "status") {
     $res = schtasks /query /tn "$TaskName" /fo LIST 2>&1
