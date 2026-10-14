@@ -62,10 +62,11 @@ def collect_pages(source, fetch_page, page_limit=None, *, sleep=None, jitter=Non
     jobs, identifiers = [], set()
     pages, retries, last_status = 0, 0, None
 
-    def finish(success, error=None, status=None):
+    def finish(success, error=None, status=None, retry_after=None):
         return SourceResult(
             source=source, success=success, jobs=jobs, error_message=error,
             pages_fetched=pages, retry_count=retries, http_status=status,
+            retry_after_seconds=retry_after,
             elapsed_ms=max(0, int((time.monotonic()-started)*1000)),
         )
 
@@ -90,7 +91,7 @@ def collect_pages(source, fetch_page, page_limit=None, *, sleep=None, jitter=Non
         if not result.success:
             reason = result.error_message or "Provider request failed"
             return finish(bool(jobs), "Partial page collection: " + reason if jobs else reason,
-                          result.http_status)
+                          result.http_status, result.retry_after_seconds)
         raw_count = result.raw_count
         page_jobs = result.jobs
         before = len(identifiers)
