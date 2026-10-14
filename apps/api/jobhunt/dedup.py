@@ -41,7 +41,7 @@ def canonical_vacancy_url(url: str) -> str:
             host += ":" + str(parsed.port)
         path = parsed.path.rstrip("/") or "/"
         # Query params may contain actual vacancy IDs: retain these.
-        tracking = {"trk", "tracking", "trackingid", "ref", "source",
+        tracking = {"trk", "tracking", "trackingid",
                     "utm_source", "utm_medium", "utm_campaign", "utm_term",
                     "utm_content", "fbclid", "gclid"}
         query = urlencode(sorted((k, v) for k, v in parse_qsl(parsed.query)
@@ -58,8 +58,14 @@ def verified_vacancy_key(job: Dict[str, Any]) -> tuple:
     merges that would change seen/saved/application state on another vacancy.
     """
     normalized_url = canonical_vacancy_url(job.get("url") or "")
-    # A homepage or generic root URL is not evidence of a shared vacancy.
-    if normalized_url and urlsplit(normalized_url).path != "/":
+    # A homepage or generic category URL cannot identify a particular job.
+    parsed = urlsplit(normalized_url) if normalized_url else None
+    segments = [part.lower() for part in parsed.path.split("/") if part] if parsed else []
+    generic_category = (len(segments) == 1 and
+                        segments[0] in {"jobs", "job", "careers", "vacancies",
+                                        "opportunities", "positions", "listings", "search"} and
+                        not parsed.query)
+    if normalized_url and parsed.path != "/" and not generic_category:
         return ("url", normalized_url,
                 normalize_key(job.get("company", ""), job.get("title", "")),
                 job.get("area") or "unspecified",
