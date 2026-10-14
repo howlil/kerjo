@@ -2,7 +2,7 @@
   import Icon from '../Icon.svelte';
   import Button from '../ui/Button.svelte';
 
-  let { run = null, runs = [], events = [], sources = [], loading = false,
+  let { run = null, runs = [], events = [], sources = [], loading = false, busy = false,
         error = '', onStart = () => {}, onChooseRun = () => {},
         onPreview = () => {}, onAddSearch = () => {} } = $props();
 
@@ -37,7 +37,7 @@
     <div><div class="ui-eyebrow">COLLECTION / MANUAL</div><h1>Scraping</h1><p>Jalankan kolektor, pantau progres dan periksa aktivitas setiap sumber.</p></div>
     <div class="heading-actions">
       <Button onclick={onAddSearch}><Icon name="plus" size={13}/>Saved searches</Button>
-      <Button variant="primary" onclick={onStart} disabled={isRunning}><Icon name="refresh" size={13}/>{isRunning ? 'Scraping…' : 'Start scraping'}</Button>
+      <Button variant="primary" onclick={onStart} disabled={isRunning || busy}><Icon name="refresh" size={13}/>{isRunning || busy ? 'Scraping berjalan…' : 'Scrape sekarang'}</Button>
     </div>
   </header>
 
