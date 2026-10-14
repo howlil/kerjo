@@ -6,6 +6,8 @@
   import FilterSidebar from './components/jobs/FilterSidebar.svelte';
   import JobCard from './components/jobs/JobCard.svelte';
   import JobInspector from './components/jobs/JobInspector.svelte';
+  import ApplicationPipeline from './components/workflow/ApplicationPipeline.svelte';
+  import PreferencePanel from './components/workflow/PreferencePanel.svelte';
 
   // Core State
   let jobs = $state([]);
@@ -15,6 +17,14 @@
   let loading = $state(false);
   let runningScraper = $state(false);
   let activeJob = $state(null);
+  let jobsTotal = $state(0);
+  let currentView = $state('discovery');
+  let notice = $state('');
+  let applications = $state([]);
+  let sourceHealth = $state([]);
+  let preferences = $state({role_categories:[], areas:[],work_modes:[],keywords:[],max_required_years:null});
+  let currentRun = $state(null);
+  let sortMode = $state('recent');
 
   // UI state is kept separate from the existing server-side API filters.
   let displayMode = $state('grid');
@@ -22,15 +32,11 @@
   let mobileFilterOpen = $state(false);
   let mobileDetailOpen = $state(false);
   let showSavedOnly = $state(false);
-  let savedIds = $state([]);
+
   let jobsError = $state('');
   let searchTimer;
   let latestRequest = 0;
-  let visibleJobs = $derived.by(() => {
-    const filtered = showSavedOnly ? jobs.filter(job => savedIds.includes(job.id)) : [...jobs];
-    if (displayMode === 'list') return filtered;
-    return filtered;
-  });
+  let visibleJobs = $derived(jobs);
 
   const sourceLabels = [
     ['jobstreet','JobStreet'],['kalibrr','Kalibrr'],['linkedin','LinkedIn'],
@@ -102,6 +108,15 @@
     { id: 'techinasia', label: 'Tech in Asia' },
   ];
 
+  async function api(url, options={}) {
+    const response = await fetch(url, options);
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || ('HTTP ' + response.status));
+    return data;
+  }
+  function jsonOptions(method,payload) {
+    return {method,headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)};
+  }
   async function loadJobs() {
     const requestId = ++latestRequest;
     loading = true;
@@ -115,6 +130,8 @@
       if (selectedCompany !== 'all') params.set('company', selectedCompany);
       if (onlyNew) params.set('is_new', '1');
       if (searchQuery.trim()) params.set('q', searchQuery.trim());
+      if (showSavedOnly) params.set('saved','1');
+      params.set('sort',sortMode);
       params.set('limit', '300');
 
       const res = await fetch(`/api/jobs?${params.toString()}`);
@@ -122,12 +139,13 @@
       const data = await res.json();
       if (requestId !== latestRequest) return;
       jobs = data.jobs || [];
+      jobsTotal = data.total ?? jobs.length;
       if (!activeJob && jobs.length) activeJob = jobs[0];
 
       // Update activeJob reference if still in list
       if (activeJob) {
-        const found = jobs.find(j => j.id === activeJob.id);
-        if (found) activeJob = found;
+        const found = jobs.find(j => j.id === activeJob.id || j.ids?.includes(activeJob.id));
+        activeJob = found || null;
       }
     } catch (e) {
       if (requestId === latestRequest) {
@@ -169,23 +187,56 @@
     }
   }
 
+  async function loadApplications() {
+    try { applications = (await api('/api/applications')).applications || []; }
+    catch(e) { notice = 'Gagal memuat pipeline: ' + e.message; }
+  }
+  async function loadPreferences() {
+    try { preferences = (await api('/api/preferences')).preferences; }
+    catch(e) { notice = 'Gagal memuat preferensi: ' + e.message; }
+  }
+  async function savePreferences() {
+    try {
+      preferences = (await api('/api/preferences',jsonOptions('PUT',preferences))).preferences;
+      notice = 'Preferensi tersimpan.';
+      await loadJobs();
+    } catch(e) { notice = 'Gagal menyimpan preferensi: ' + e.message; }
+  }
+  async function loadSourceHealth() {
+    try { sourceHealth = (await api('/api/source-health')).sources || []; }
+    catch(e) { notice = 'Gagal memuat source health: ' + e.message; }
+  }
+  async function recoverRun() {
+    try {
+      const run = (await api('/api/run/latest')).run;
+      if (run && ['queued','running'].includes(run.status)) {
+        currentRun = run;
+        runningScraper = true;
+      }
+    } catch(e) { console.warn('Unable to restore run',e); }
+  }
+  async function pollRun() {
+    if (!currentRun || !runningScraper) return;
+    try {
+      const run = (await api('/api/run/' + currentRun.id)).run;
+      currentRun = run;
+      if (['completed','partial','failed'].includes(run.status)) {
+        runningScraper = false;
+        notice = run.status === 'completed'
+          ? ('Scraping selesai: ' + run.jobs_new + ' lowongan baru')
+          : ('Scraping ' + run.status + ' — ' + run.errors + ' sumber mengalami error');
+        await Promise.all([loadJobs(),loadRuns(),loadCompanies(),loadSourceHealth()]);
+      }
+    } catch(e) { runningScraper=false; notice = 'Error saat memantau worker: '+e.message; }
+  }
   async function triggerRun() {
     if (runningScraper) return;
     runningScraper = true;
     try {
-      await fetch('/api/run', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({})
-      });
-      await loadRuns();
-      await loadJobs();
-      await loadCompanies();
-    } catch (e) {
-      alert('Gagal menjalankan scraper: ' + e);
-    } finally {
-      runningScraper = false;
-    }
+      const result = await api('/api/run',jsonOptions('POST',{}));
+      currentRun = {id:result.run_id,status:'queued',processed_tasks:0,total_tasks:0,jobs_new:0};
+      notice = 'Scraping berjalan di worker. Dashboard tetap responsif.';
+    } catch(e) { runningScraper=false; notice='Gagal menjalankan scraper: '+e.message; }
   }
 
   function selectJob(job) {
@@ -199,23 +250,43 @@
   }
 
   async function markJobSeen(job) {
-    if (!job.is_new) return;
-    job.is_new = 0;
+    if (!job?.is_new) return;
     try {
-      const ids = job.ids && job.ids.length > 0 ? job.ids : [job.id];
-      await Promise.all(ids.map(id => fetch(`/api/jobs/${id}/seen`, { method: 'POST' })));
-    } catch (e) {
-      console.error('Error marking seen:', e);
-    }
+      const ids = job.ids?.length ? job.ids : [job.id];
+      await api('/api/jobs/seen-all',jsonOptions('POST',{ids}));
+      job.is_new = 0;
+      if (onlyNew) await loadJobs();
+    } catch(e) { notice = 'Gagal menandai dilihat: '+e.message; }
   }
 
   async function markAllSeen() {
-    if (!confirm('Tandai semua lowongan saat ini sebagai sudah dilihat?')) return;
+    if (!jobs.length || !confirm('Tandai hanya lowongan yang sedang ditampilkan sebagai sudah dilihat?')) return;
     try {
-      await fetch('/api/jobs/seen-all', { method: 'POST' });
+      const ids = [...new Set(jobs.flatMap(j=>j.ids?.length?j.ids:[j.id]))];
+      await api('/api/jobs/seen-all',jsonOptions('POST',{ids}));
       for (const j of jobs) j.is_new = 0;
-    } catch (e) {
-      alert('Error: ' + e);
+      if (onlyNew) await loadJobs();
+    } catch(e) { notice='Gagal menandai dilihat: '+e.message; }
+  }
+
+  async function updateApplication(job,payload) {
+    try {
+      const ids = job.ids?.length ? job.ids : [job.id];
+      await api('/api/jobs/'+job.id+'/application',jsonOptions('PUT',{...payload,ids}));
+      notice = 'Status lamaran diperbarui.';
+      await Promise.all([loadJobs(),loadApplications()]);
+    } catch(e) { notice='Gagal memperbarui lamaran: '+e.message; }
+  }
+
+  async function updatePipelineStatus(app,status) {
+    try {
+      await api('/api/jobs/'+app.job_id+'/application',jsonOptions('PUT',{
+        ids:app.ids||[app.job_id],status,notes:app.notes,follow_up_at:app.follow_up_at
+      }));
+      await Promise.all([loadApplications(),loadJobs()]);
+    } catch(e) {
+      notice = 'Transisi ditolak: '+e.message;
+      await loadApplications();
     }
   }
 
@@ -276,7 +347,7 @@
   }
 
   function formatArea(areaStr) {
-    if (!areaStr) return 'Lokasi Umum';
+    if (!areaStr || areaStr === 'unspecified') return 'Lokasi belum pasti';
     return areaStr.replace(/_/g, ' ').toUpperCase();
   }
 
@@ -292,7 +363,7 @@
     if (job.experience_level === 'entry') return '0-2 Tahun / Entry';
     if (job.experience_level === 'mid') return 'Min 1-2 Tahun';
     if (job.experience_level === 'senior') return '>3 Tahun / Senior';
-    return 'Pengalaman Fleksibel';
+    return 'Syarat pengalaman belum diketahui';
   }
 
   function resetAllFilters() {
@@ -303,6 +374,7 @@
     selectedCompany = 'all';
     onlyNew = false;
     searchQuery = '';
+    showSavedOnly = false;
     loadJobs();
   }
 
@@ -324,9 +396,15 @@
     searchTimer = setTimeout(loadJobs, 280);
   }
 
-  function toggleSaved(job) {
-    savedIds = savedIds.includes(job.id) ? savedIds.filter(id => id !== job.id) : [...savedIds, job.id];
-    try { localStorage.setItem('kerjo:saved-job-ids', JSON.stringify(savedIds)); } catch {}
+  async function toggleSaved(job) {
+    try {
+      const ids = job.ids?.length ? job.ids : [job.id];
+      const saved = !Boolean(job.is_saved);
+      await api('/api/jobs/'+job.id+'/save',jsonOptions('POST',{ids,saved}));
+      job.is_saved = Number(saved);
+      if (activeJob?.id === job.id) activeJob.is_saved = Number(saved);
+      if (showSavedOnly) await loadJobs();
+    } catch(e) { notice = 'Gagal menyimpan lowongan: '+e.message; }
   }
 
   function toggleTheme() {
@@ -343,8 +421,6 @@
 
   onMount(() => {
     try {
-      const storedIds = JSON.parse(localStorage.getItem('kerjo:saved-job-ids') || '[]');
-      if (Array.isArray(storedIds)) savedIds = storedIds;
       theme = localStorage.getItem('kerjo:theme') === 'dark' ? 'dark' : 'light';
       document.documentElement.dataset.theme = theme;
     } catch {}
@@ -352,7 +428,12 @@
     loadCompanies();
     loadSearches();
     loadRuns();
-    return () => clearTimeout(searchTimer);
+    loadPreferences();
+    loadApplications();
+    loadSourceHealth();
+    recoverRun();
+    const interval = setInterval(()=>{if(runningScraper && currentRun) pollRun();},2500);
+    return () => {clearTimeout(searchTimer);clearInterval(interval);};
   });
 </script>
 
