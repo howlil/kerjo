@@ -307,7 +307,8 @@ class JobhuntRequestHandler(http.server.BaseHTTPRequestHandler):
 
 def execute_batch(db, features, gate, run_id, keyword=None, area="all", sources=None):
     stats = {"total_tasks": 0, "processed_tasks": 0, "jobs_found": 0, "jobs_new": 0, "errors": 0,
-             "jobs_recent": 0, "filtered_old": 0, "filtered_unknown": 0, "filtered_future": 0}
+             "jobs_recent": 0, "filtered_old": 0, "filtered_unknown": 0, "filtered_future": 0,
+             "pages_fetched": 0, "retry_count": 0, "details_enriched": 0, "duration_ms": 0}
     try:
         features.update_batch(run_id, status="running", started_at=utc_now())
         def progress(result, done, total):
@@ -320,6 +321,10 @@ def execute_batch(db, features, gate, run_id, keyword=None, area="all", sources=
                 stats["filtered_old"] += result.get("filtered_old", 0)
                 stats["filtered_unknown"] += result.get("filtered_unknown", 0)
                 stats["filtered_future"] += result.get("filtered_future", 0)
+                stats["pages_fetched"] += result.get("pages_fetched", 0)
+                stats["retry_count"] += result.get("retry_count", 0)
+                stats["details_enriched"] += result.get("details_enriched", 0)
+                stats["duration_ms"] += result.get("duration_ms", 0)
                 if result["status"] != "success":
                     stats["errors"] += 1
             features.update_batch(run_id, **stats)
