@@ -170,9 +170,13 @@ class JobRunner:
                                       jobs=[], error_message=str(exc))
             if result.success and result.jobs and self._detail_remaining[source_name] > 0:
                 attempts = {}
+                try:
+                    per_keyword_budget = max(0, min(10, int(os.getenv("KERJO_DETAIL_ENRICH_LIMIT", "3"))))
+                except (ValueError, TypeError):
+                    per_keyword_budget = 3
                 result.enriched_count = enrich_jobs(
                     result.jobs, source_name,
-                    max_details=self._detail_remaining[source_name],
+                    max_details=min(per_keyword_budget, self._detail_remaining[source_name]),
                     stats=attempts,
                 )
                 self._detail_remaining[source_name] -= attempts.get("attempted", 0)
