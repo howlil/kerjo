@@ -6,7 +6,8 @@ import datetime as dt
 import json
 import sqlite3
 from typing import Optional
-from jobhunt.dedup import verified_vacancy_key
+from jobhunt.dedup import verified_vacancy_key, group_dedup_jobs
+from jobhunt.freshness import recent_posting, parse_posted_at
 
 CATEGORIES = {"backend", "frontend", "fullstack", "mobile", "data",
               "infra_network", "qa", "product_engineer", "software_engineer"}
@@ -147,6 +148,23 @@ class FeatureStore:
                     started_at TEXT,
                     finished_at TEXT
                 );
+                CREATE TABLE IF NOT EXISTS run_events (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    batch_id INTEGER NOT NULL REFERENCES run_batches(id) ON DELETE CASCADE,
+                    source TEXT NOT NULL,
+                    level TEXT NOT NULL,
+                    event_type TEXT NOT NULL,
+                    message TEXT NOT NULL,
+                    metrics_json TEXT NOT NULL DEFAULT '{}',
+                    created_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_run_events_cursor
+                    ON run_events(batch_id, id);
+                CREATE TABLE IF NOT EXISTS run_job_links (
+                    batch_id INTEGER NOT NULL REFERENCES run_batches(id) ON DELETE CASCADE,
+                    job_id INTEGER NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+                    PRIMARY KEY(batch_id, job_id)
+                );
             """)
             columns = {row["name"] for row in conn.execute("PRAGMA table_info(run_batches)")}
             for name in ("jobs_recent", "filtered_old", "filtered_unknown", "filtered_future",
@@ -154,6 +172,82 @@ class FeatureStore:
                 if name not in columns:
                     conn.execute(f"ALTER TABLE run_batches ADD COLUMN {name} INTEGER NOT NULL DEFAULT 0")
             conn.execute("UPDATE run_batches SET status='failed', finished_at=?, error_message='Worker interrupted by server restart' WHERE status IN ('running','queued')", (utc_now(),))
+
+    # Run observability is durable and read-only to clients. Events are written on
+    # the runner coordinator thread after each completed provider/search task.
+    def add_run_event(self, batch_id, source, level, event_type, message, metrics=None):
+        if level not in ("info", "success", "warning", "error"):
+            raise ValueError("Invalid event level")
+        with self.db._get_connection() as conn:
+            conn.execute("""INSERT INTO run_events
+                (batch_id,source,level,event_type,message,metrics_json,created_at)
+                VALUES(?,?,?,?,?,?,?)""",
+                (batch_id, str(source)[:80], level, str(event_type)[:80],
+                 str(message)[:500], json.dumps(metrics or {}), utc_now()))
+
+    def record_batch_result(self, batch_id, result):
+        """Associate only persisted, accepted vacancies with their actual batch.
+
+        This does not stage/publish jobs; existing discovery behavior is preserved.
+        Jobs rejected by technical classification do not receive a link.
+        """
+        source = result["source"]
+        status = result["status"]
+        summary = {
+            name: result.get(name, 0) for name in (
+                "found_count", "recent_count", "new_count", "filtered_old",
+                "filtered_unknown", "filtered_future", "pages_fetched",
+                "retry_count", "details_enriched", "descriptions_complete",
+                "descriptions_missing", "duration_ms")
+        }
+        summary["keyword"] = result.get("keyword", "")
+        summary["status"] = status
+        level = "error" if status == "error" else "warning" if status == "partial" else "success"
+        message = (result.get("error") or
+                   f"{result.get('keyword', '')}: {result.get('recent_count', 0)} dated candidates, "
+                   f"{result.get('new_count', 0)} new, "
+                   f"{sum(result.get(k, 0) for k in ('filtered_old','filtered_unknown','filtered_future'))} excluded")
+        # A single transaction keeps batch preview links and progress events in sync.
+        with self.db._get_connection() as conn:
+            conn.execute("""INSERT INTO run_events
+                (batch_id,source,level,event_type,message,metrics_json,created_at)
+                VALUES(?,?,?,?,?,?,?)""",
+                (batch_id, source, level, "source_task_completed",
+                 str(message)[:500], json.dumps(summary), utc_now()))
+            # Deduplicate provider keys and bind query parameters; never use URLs
+            # or first_seen timestamps as an approximation of run membership.
+            for external_id in set(result.get("job_external_ids", ())):
+                conn.execute("""INSERT OR IGNORE INTO run_job_links(batch_id,job_id)
+                    SELECT ?, id FROM jobs WHERE source=? AND external_id=?""",
+                    (batch_id, source, external_id))
+
+    def get_run_events(self, batch_id, after=0, limit=100):
+        with self.db._get_connection() as conn:
+            rows = conn.execute("""SELECT * FROM run_events
+                WHERE batch_id=? AND id>? ORDER BY id LIMIT ?""",
+                (batch_id, after, limit)).fetchall()
+        return [{**dict(r), "metrics": json.loads(r["metrics_json"])} for r in rows]
+
+    def list_batches(self, limit=20):
+        with self.db._get_connection() as conn:
+            return [dict(row) for row in conn.execute(
+                "SELECT * FROM run_batches ORDER BY id DESC LIMIT ?", (limit,))]
+
+    def get_run_preview(self, batch_id, limit=60, offset=0):
+        """Run-scoped, freshness-gated preview with total AFTER verified dedup."""
+        with self.db._get_connection() as conn:
+            rows = conn.execute("""SELECT j.* FROM jobs j
+                JOIN run_job_links b ON b.job_id=j.id
+                WHERE b.batch_id=?""", (batch_id,)).fetchall()
+        jobs = [dict(row) for row in rows if recent_posting(row["posted_at"])]
+        jobs = group_dedup_jobs(jobs)
+        jobs.sort(key=lambda j: (
+            parse_posted_at(j["posted_at"]).timestamp(), j["id"]), reverse=True)
+        total = len(jobs)
+        page = jobs[offset:offset + limit]
+        self.annotate(page)
+        return {"jobs": page, "total": total, "limit": limit, "offset": offset,
+                "batch_id": batch_id, "max_post_age_days": 14}
 
     def get_preferences(self):
         with self.db._get_connection() as conn:
