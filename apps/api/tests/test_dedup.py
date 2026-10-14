@@ -65,6 +65,19 @@ class TestDedup(unittest.TestCase):
         self.assertNotEqual(first, second)
         self.assertEqual(first, "https://example.com/jobs?id=10")
 
+    def test_generic_listing_url_is_not_canonical_identity(self):
+        jobs = [
+            {"id": 1, "source": "jobstreet", "external_id": "a",
+             "url": "https://example.org/jobs", "title": "Backend Engineer",
+             "company": "Acme", "area": "jakarta_selatan", "is_new": 1},
+            {"id": 2, "source": "linkedin", "external_id": "b",
+             "url": "https://example.org/jobs", "title": "Backend Engineer",
+             "company": "Acme", "area": "jakarta_selatan", "is_new": 1}
+        ]
+        self.assertEqual(len(group_dedup_jobs(jobs)), 2)
+        self.assertEqual(canonical_vacancy_url("https://example.org/apply?ref=job123"),
+                         "https://example.org/apply?ref=job123")
+
     def test_distinct_external_ids_same_title_do_not_merge(self):
         jobs = [
             {"id": 1, "source": "jobstreet", "external_id": "a", "url": "https://jobstreet.com/job/a",
