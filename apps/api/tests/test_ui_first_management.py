@@ -119,6 +119,31 @@ class TestManualScrapingAndDeleteAPI(unittest.TestCase):
             self.assertEqual(self.req("/api/jobs/inventory")[1]["total"], 1)
             self.assertEqual(self.req("/api/jobs")[1]["jobs"][0]["external_id"], "persisted-live-adapter")
 
+    def test_ats_boards_can_be_configured_only_from_ui_api(self):
+        status, created = self.req("/api/ats-boards", "POST",
+                                   {"provider": "ashby", "slug": "acme"})
+        self.assertEqual(status, 201)
+        _, listing = self.req("/api/ats-boards")
+        self.assertEqual([(b["provider"], b["slug"]) for b in listing["boards"]],
+                         [("ashby", "acme")])
+        from jobhunt.runner import JobRunner
+        from unittest.mock import patch
+        with patch("jobhunt.runner.fetch_ats") as fetch:
+            fetch.return_value = SourceResult("ats", True, [])
+            JobRunner(self.db).sources["ats"]("Backend")
+            self.assertEqual(fetch.call_args.kwargs["boards"], [("ashby", "acme")])
+        status, deleted = self.req("/api/ats-boards/" + str(created["id"]), "DELETE")
+        self.assertEqual((status, deleted["deleted"]), (200, 1))
+        self.assertEqual(self.req("/api/ats-boards")[1]["boards"], [])
+
+    def test_unconfigured_ats_is_not_fake_success(self):
+        from jobhunt.sources.ats import fetch_ats
+        with patch.dict("os.environ", {"KERJO_ATS_BOARDS": ""}):
+            result = fetch_ats("Backend")
+        self.assertFalse(result.success)
+        self.assertEqual(result.jobs, [])
+        self.assertIn("belum dikonfigurasi", result.error_message)
+
     def test_delete_works_via_api_and_requires_confirmation(self):
         self.db.upsert_jobs([sample()])
         job_id = self.req("/api/jobs")[1]["jobs"][0]["id"]
