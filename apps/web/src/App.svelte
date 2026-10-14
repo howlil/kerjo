@@ -7,6 +7,7 @@
   let jobs = $state([]);
   let searches = $state([]);
   let latestRuns = $state([]);
+  let companies = $state([]);
   let loading = $state(false);
   let runningScraper = $state(false);
   let activeJob = $state(null);
@@ -16,6 +17,7 @@
   let selectedRole = $state('all');
   let selectedExperience = $state('all');
   let selectedSource = $state('all');
+  let selectedCompany = $state('all');
   let onlyNew = $state(false);
   let searchQuery = $state('');
 
@@ -83,15 +85,16 @@
       if (selectedRole !== 'all') params.set('role_category', selectedRole);
       if (selectedExperience !== 'all') params.set('experience_level', selectedExperience);
       if (selectedSource !== 'all') params.set('source', selectedSource);
+      if (selectedCompany !== 'all') params.set('company', selectedCompany);
       if (onlyNew) params.set('is_new', '1');
       if (searchQuery.trim()) params.set('q', searchQuery.trim());
-      params.set('limit', '250');
+      params.set('limit', '300');
 
       const res = await fetch(`/api/jobs?${params.toString()}`);
       const data = await res.json();
       jobs = data.jobs || [];
 
-      // Update activeJob reference if still in the list
+      // Update activeJob reference if still in list
       if (activeJob) {
         const found = jobs.find(j => j.id === activeJob.id);
         if (found) activeJob = found;
@@ -100,6 +103,16 @@
       console.error('Error loading jobs:', e);
     } finally {
       loading = false;
+    }
+  }
+
+  async function loadCompanies() {
+    try {
+      const res = await fetch('/api/companies');
+      const data = await res.json();
+      companies = data.companies || [];
+    } catch (e) {
+      console.error('Error loading companies:', e);
     }
   }
 
@@ -134,6 +147,7 @@
       });
       await loadRuns();
       await loadJobs();
+      await loadCompanies();
     } catch (e) {
       alert('Gagal menjalankan scraper: ' + e);
     } finally {
@@ -146,6 +160,12 @@
     if (job && job.is_new) {
       markJobSeen(job);
     }
+  }
+
+  function filterByCompany(compName) {
+    if (!compName) return;
+    selectedCompany = compName;
+    loadJobs();
   }
 
   async function markJobSeen(job) {
@@ -209,6 +229,7 @@
       showAddSearch = false;
       await loadSearches();
       await loadJobs();
+      await loadCompanies();
     } catch (e) {
       alert('Gagal menyimpan pencarian: ' + e);
     }
@@ -230,7 +251,7 @@
   }
 
   function formatRole(roleStr) {
-    if (!roleStr || roleStr === 'other' || roleStr === 'unspecified') return 'Technical Role';
+    if (!roleStr || roleStr === 'other' || roleStr === 'unspecified') return 'TECHNICAL ROLE';
     if (roleStr === 'infra_network') return 'INFRA / DEVOPS';
     if (roleStr === 'product_engineer') return 'PRODUCT ENGINEER';
     return roleStr.replace(/_/g, ' ').toUpperCase();
@@ -249,6 +270,7 @@
     selectedRole = 'all';
     selectedExperience = 'all';
     selectedSource = 'all';
+    selectedCompany = 'all';
     onlyNew = false;
     searchQuery = '';
     loadJobs();
@@ -256,34 +278,35 @@
 
   onMount(() => {
     loadJobs();
+    loadCompanies();
     loadSearches();
     loadRuns();
   });
 </script>
 
 <div class="min-h-screen bg-[var(--color-page)] flex flex-col text-[var(--color-text-body)]">
-  <!-- Top Navbar -->
-  <header class="sticky top-0 z-40 bg-[var(--color-page)]/95 backdrop-blur-md border-b border-[var(--color-border-subtle)] px-4 sm:px-6 py-3">
-    <div class="max-w-[1800px] mx-auto flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+  <!-- Top Navbar (Strict Monochrome) -->
+  <header class="sticky top-0 z-40 bg-[var(--color-page)]/95 backdrop-blur-md border-b border-[var(--color-border-subtle)] px-4 sm:px-6 py-2.5">
+    <div class="max-w-[1880px] mx-auto flex flex-col md:flex-row md:items-center md:justify-between gap-3">
       <!-- Brand & Status -->
       <div class="flex items-center gap-3">
         <a href="/" class="flex items-center gap-2 group text-decoration-none">
-          <span class="w-8 h-8 rounded-full bg-[var(--color-accent)] text-[#121212] flex items-center justify-center font-bold text-sm shadow-xs transition group-hover:scale-105">
-            <Icon name="briefcase" size={16} />
+          <span class="w-7 h-7 rounded-full bg-black text-white flex items-center justify-center font-bold text-xs shadow-xs transition group-hover:scale-105">
+            <Icon name="briefcase" size={14} />
           </span>
-          <span class="text-xl font-bold tracking-tight text-[var(--color-text-heading)]">
+          <span class="text-lg font-bold tracking-tight text-black">
             kerjo
           </span>
         </a>
 
-        <div class="h-4 w-[1px] bg-[var(--color-border)] hidden sm:block"></div>
+        <div class="h-4 w-[1px] bg-neutral-300 hidden sm:block"></div>
 
         <div class="hidden sm:flex items-center gap-2">
-          <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-mono border border-[#ACE1AF]/60 bg-[#ACE1AF]/15 text-[#121212]">
-            <span class="w-2 h-2 rounded-full bg-[#ACE1AF] animate-pulse"></span>
+          <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-mono border border-neutral-300 bg-neutral-100 text-black">
+            <span class="w-1.5 h-1.5 rounded-full bg-black"></span>
             Cronjob Tiap Jam Aktif
           </span>
-          <span class="text-xs text-[var(--color-text-muted)] font-mono hidden xl:inline">
+          <span class="text-xs text-neutral-500 font-mono hidden xl:inline">
             Jabodetabek & BSD / Alsut
           </span>
         </div>
@@ -293,7 +316,7 @@
       <div class="flex items-center gap-2">
         <button
           onclick={markAllSeen}
-          class="control-pill px-3 py-1.5 text-xs text-[var(--color-text-secondary)] hover:text-[var(--color-text-heading)] flex items-center gap-1.5 cursor-pointer"
+          class="control-pill px-3 py-1.5 text-xs text-neutral-700 hover:text-black flex items-center gap-1.5 cursor-pointer"
           title="Tandai semua lowongan sebagai sudah dilihat"
         >
           <Icon name="checkCircle" size={13} />
@@ -302,7 +325,7 @@
 
         <button
           onclick={() => (showAddSearch = true)}
-          class="control-pill px-3 py-1.5 text-xs text-[var(--color-text-secondary)] hover:text-[var(--color-text-heading)] flex items-center gap-1.5 cursor-pointer"
+          class="control-pill px-3 py-1.5 text-xs text-neutral-700 hover:text-black flex items-center gap-1.5 cursor-pointer"
         >
           <Icon name="plus" size={13} />
           <span>Simpan Posisi</span>
@@ -314,7 +337,7 @@
           class="control-pill control-pill-active px-3.5 py-1.5 text-xs font-medium flex items-center gap-1.5 cursor-pointer disabled:opacity-60"
         >
           {#if runningScraper}
-            <span class="w-3 h-3 border-2 border-[#121212]/30 border-t-[#121212] rounded-full animate-spin"></span>
+            <span class="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
             <span>Scraping...</span>
           {:else}
             <Icon name="refresh" size={13} />
@@ -326,79 +349,109 @@
   </header>
 
   <!-- 3-Column Layout: Sidebar Filter : Main Component : Sidebar Detail -->
-  <!-- Ratio: 1:5 (when no card selected), 1:4:1 (when card clicked) -->
-  <div class="max-w-[1800px] w-full mx-auto px-4 sm:px-6 py-4 flex-1">
-    <div class="grid grid-cols-1 lg:grid-cols-6 gap-5 items-start">
+  <!-- Composition: 1:5 default, 1:4:1 when card detail open -->
+  <div class="max-w-[1880px] w-full mx-auto px-3 sm:px-5 py-3 flex-1">
+    <div class="grid grid-cols-1 lg:grid-cols-6 gap-3.5 items-start">
 
       <!-- ========================================== -->
       <!-- COLUMN 1: SIDEBAR FILTER (1 part)          -->
+      <!-- Sticky, No outer section padding           -->
       <!-- ========================================== -->
-      <aside class="lg:col-span-1 space-y-5 bg-[var(--color-surface)] p-4 rounded-2xl border border-[var(--color-border-subtle)]">
+      <aside class="lg:col-span-1 sticky top-16 max-h-[calc(100vh-4.75rem)] overflow-y-auto space-y-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-3 shadow-xs">
+        <!-- Filter Header -->
         <div class="flex items-center justify-between pb-2 border-b border-[var(--color-border-subtle)]">
-          <div class="flex items-center gap-1.5 text-xs font-semibold text-[var(--color-text-heading)]">
-            <Icon name="filter" size={14} />
-            <span>Filter Pencarian</span>
+          <div class="flex items-center gap-1.5 text-xs font-bold text-black">
+            <Icon name="filter" size={13} />
+            <span>Filter</span>
           </div>
-          {#if selectedRole !== 'all' || selectedExperience !== 'all' || selectedArea !== 'all' || selectedSource !== 'all' || onlyNew || searchQuery}
+          {#if selectedRole !== 'all' || selectedExperience !== 'all' || selectedArea !== 'all' || selectedSource !== 'all' || selectedCompany !== 'all' || onlyNew || searchQuery}
             <button
               onclick={resetAllFilters}
-              class="text-[11px] text-[var(--color-text-muted)] hover:text-[var(--color-text-heading)] cursor-pointer flex items-center gap-0.5"
+              class="text-[10px] text-neutral-500 hover:text-black cursor-pointer font-medium"
             >
-              Reset
+              Reset Semua
             </button>
           {/if}
         </div>
 
-        <!-- Filter: Role Category -->
-        <div class="space-y-1.5">
-          <span class="block text-[11px] font-mono uppercase tracking-wider text-[var(--color-text-muted)]">
+        <!-- Section: Role Category (flush, no outer padding) -->
+        <div class="space-y-1">
+          <span class="block text-[10px] font-mono uppercase tracking-wider text-neutral-500">
             Kategori Role
           </span>
-          <div class="space-y-1">
+          <div class="space-y-0.5">
             {#each roleCategories as r}
               <button
                 onclick={() => { selectedRole = r.id; loadJobs(); }}
-                class="w-full text-left px-2.5 py-1.5 rounded-full text-xs transition flex items-center justify-between cursor-pointer {selectedRole === r.id ? 'bg-[var(--color-accent)] text-[#121212] font-semibold shadow-2xs' : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-hover)]'}"
+                class="w-full text-left px-2 py-1 rounded-md text-xs transition flex items-center justify-between cursor-pointer {selectedRole === r.id ? 'bg-black text-white font-semibold' : 'text-neutral-700 hover:bg-neutral-200/60'}"
               >
                 <span>{r.label}</span>
                 {#if selectedRole === r.id}
-                  <Icon name="check" size={12} />
+                  <Icon name="check" size={11} />
                 {/if}
               </button>
             {/each}
           </div>
         </div>
 
-        <!-- Filter: Experience Bracket -->
-        <div class="space-y-1.5 pt-2 border-t border-[var(--color-border-subtle)]">
-          <span class="block text-[11px] font-mono uppercase tracking-wider text-[var(--color-text-muted)]">
+        <!-- Section: Experience Level (flush) -->
+        <div class="space-y-1 pt-2.5 border-t border-[var(--color-border-subtle)]">
+          <span class="block text-[10px] font-mono uppercase tracking-wider text-neutral-500">
             Pengalaman
           </span>
-          <div class="space-y-1">
+          <div class="space-y-0.5">
             {#each experienceLevels as exp}
               <button
                 onclick={() => { selectedExperience = exp.id; loadJobs(); }}
-                class="w-full text-left px-2.5 py-1.5 rounded-full text-xs transition flex items-center justify-between cursor-pointer {selectedExperience === exp.id ? 'bg-[var(--color-accent)] text-[#121212] font-semibold shadow-2xs' : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-hover)]'}"
+                class="w-full text-left px-2 py-1 rounded-md text-xs transition flex items-center justify-between cursor-pointer {selectedExperience === exp.id ? 'bg-black text-white font-semibold' : 'text-neutral-700 hover:bg-neutral-200/60'}"
               >
                 <span>{exp.label}</span>
                 {#if selectedExperience === exp.id}
-                  <Icon name="check" size={12} />
+                  <Icon name="check" size={11} />
                 {/if}
               </button>
             {/each}
           </div>
         </div>
 
-        <!-- Filter: Area -->
-        <div class="space-y-1.5 pt-2 border-t border-[var(--color-border-subtle)]">
-          <label for="filter-area-select" class="block text-[11px] font-mono uppercase tracking-wider text-[var(--color-text-muted)]">
+        <!-- Section: Filter by Company Across Aggregators (flush) -->
+        <div class="space-y-1 pt-2.5 border-t border-[var(--color-border-subtle)]">
+          <div class="flex items-center justify-between">
+            <label for="filter-company-select" class="block text-[10px] font-mono uppercase tracking-wider text-neutral-500">
+              Perusahaan ({companies.length})
+            </label>
+            {#if selectedCompany !== 'all'}
+              <button
+                onclick={() => { selectedCompany = 'all'; loadJobs(); }}
+                class="text-[10px] text-neutral-500 hover:text-black cursor-pointer font-medium"
+              >
+                Reset
+              </button>
+            {/if}
+          </div>
+          <select
+            id="filter-company-select"
+            bind:value={selectedCompany}
+            onchange={loadJobs}
+            class="w-full text-xs px-2 py-1.5 rounded-lg bg-white border border-[var(--color-border)] text-black focus:outline-none focus:ring-1 focus:ring-black cursor-pointer"
+          >
+            <option value="all">Semua Perusahaan</option>
+            {#each companies as c}
+              <option value={c.company}>{c.company} ({c.job_count})</option>
+            {/each}
+          </select>
+        </div>
+
+        <!-- Section: Area (flush) -->
+        <div class="space-y-1 pt-2.5 border-t border-[var(--color-border-subtle)]">
+          <label for="filter-area-select" class="block text-[10px] font-mono uppercase tracking-wider text-neutral-500">
             Area Lokasi
           </label>
           <select
             id="filter-area-select"
             bind:value={selectedArea}
             onchange={loadJobs}
-            class="w-full text-xs px-2.5 py-2 rounded-xl bg-[var(--color-page)] border border-[var(--color-border)] text-[var(--color-text-heading)] focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)] cursor-pointer"
+            class="w-full text-xs px-2 py-1.5 rounded-lg bg-white border border-[var(--color-border)] text-black focus:outline-none focus:ring-1 focus:ring-black cursor-pointer"
           >
             {#each areas as a}
               <option value={a.id}>{a.label}</option>
@@ -406,16 +459,16 @@
           </select>
         </div>
 
-        <!-- Filter: Source Platform -->
-        <div class="space-y-1.5 pt-2 border-t border-[var(--color-border-subtle)]">
-          <label for="filter-source-select" class="block text-[11px] font-mono uppercase tracking-wider text-[var(--color-text-muted)]">
+        <!-- Section: Platform Portal (flush) -->
+        <div class="space-y-1 pt-2.5 border-t border-[var(--color-border-subtle)]">
+          <label for="filter-source-select" class="block text-[10px] font-mono uppercase tracking-wider text-neutral-500">
             Platform Portal
           </label>
           <select
             id="filter-source-select"
             bind:value={selectedSource}
             onchange={loadJobs}
-            class="w-full text-xs px-2.5 py-2 rounded-xl bg-[var(--color-page)] border border-[var(--color-border)] text-[var(--color-text-heading)] focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)] cursor-pointer"
+            class="w-full text-xs px-2 py-1.5 rounded-lg bg-white border border-[var(--color-border)] text-black focus:outline-none focus:ring-1 focus:ring-black cursor-pointer"
           >
             {#each platforms as p}
               <option value={p.id}>{p.label}</option>
@@ -423,31 +476,31 @@
           </select>
         </div>
 
-        <!-- Filter: Only NEW -->
-        <div class="pt-2 border-t border-[var(--color-border-subtle)]">
+        <!-- Section: Only NEW (flush) -->
+        <div class="pt-2.5 border-t border-[var(--color-border-subtle)]">
           <button
             onclick={() => { onlyNew = !onlyNew; loadJobs(); }}
             class="w-full ui-chip justify-between {onlyNew ? 'ui-chip-active' : ''}"
           >
             <span class="flex items-center gap-1.5">
-              <span class="w-2 h-2 rounded-full {onlyNew ? 'bg-[#121212]' : 'bg-[#ACE1AF]'}"></span>
+              <span class="w-1.5 h-1.5 rounded-full {onlyNew ? 'bg-white' : 'bg-black'}"></span>
               <span>Hanya Baru (NEW)</span>
             </span>
             {#if onlyNew}
-              <Icon name="check" size={12} />
+              <Icon name="check" size={11} />
             {/if}
           </button>
         </div>
 
-        <!-- Saved Searches Widget -->
-        <div class="pt-3 border-t border-[var(--color-border-subtle)] space-y-2">
+        <!-- Section: Auto-Search Widget (flush) -->
+        <div class="pt-2.5 border-t border-[var(--color-border-subtle)] space-y-1.5">
           <div class="flex items-center justify-between">
-            <span class="text-[11px] font-mono uppercase tracking-wider text-[var(--color-text-muted)]">
+            <span class="text-[10px] font-mono uppercase tracking-wider text-neutral-500">
               Auto-Search ({searches.length})
             </span>
             <button
               onclick={() => (showAddSearch = true)}
-              class="text-[11px] text-[var(--color-text-secondary)] hover:text-[var(--color-text-heading)] cursor-pointer"
+              class="text-[11px] text-neutral-600 hover:text-black cursor-pointer p-0.5"
               title="Tambah Posisi"
             >
               <Icon name="plus" size={12} />
@@ -455,24 +508,24 @@
           </div>
 
           {#if searches.length === 0}
-            <p class="text-[11px] text-[var(--color-text-muted)] leading-relaxed">
+            <p class="text-[11px] text-neutral-500 leading-snug">
               Belum ada posisi tersimpan untuk cronjob tiap jam.
             </p>
           {:else}
-            <div class="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+            <div class="space-y-1 max-h-44 overflow-y-auto pr-0.5">
               {#each searches as s}
-                <div class="flex items-center justify-between gap-1 text-xs px-2.5 py-1.5 rounded-lg border border-[var(--color-border-subtle)] bg-[var(--color-page)] {s.is_active ? '' : 'opacity-50'}">
+                <div class="flex items-center justify-between gap-1 text-xs px-2 py-1 rounded-md border border-[var(--color-border-subtle)] bg-white {s.is_active ? '' : 'opacity-40'}">
                   <button
                     onclick={() => toggleSearch(s.id)}
                     class="flex items-center gap-1.5 truncate text-left cursor-pointer flex-1"
                     title={s.is_active ? 'Status aktif. Klik untuk jeda' : 'Status dijeda. Klik untuk aktifkan'}
                   >
-                    <span class="w-1.5 h-1.5 rounded-full shrink-0 {s.is_active ? 'bg-[#ACE1AF]' : 'bg-[var(--color-border-strong)]'}"></span>
-                    <span class="font-medium text-[var(--color-text-heading)] truncate text-[11px]">{s.keyword}</span>
+                    <span class="w-1.5 h-1.5 rounded-full shrink-0 {s.is_active ? 'bg-black' : 'bg-neutral-400'}"></span>
+                    <span class="font-medium text-black truncate text-[11px]">{s.keyword}</span>
                   </button>
                   <button
                     onclick={() => deleteSearch(s.id)}
-                    class="text-[var(--color-text-muted)] hover:text-red-600 cursor-pointer p-0.5 shrink-0"
+                    class="text-neutral-400 hover:text-black cursor-pointer p-0.5 shrink-0"
                     title="Hapus"
                   >
                     <Icon name="trash" size={11} />
@@ -486,49 +539,50 @@
 
       <!-- ======================================================== -->
       <!-- COLUMN 2: MAIN COMPONENT (5 parts default, 4 when open)  -->
+      <!-- Card Grid fits 4 cards across on desktop viewports       -->
       <!-- ======================================================== -->
-      <main class="{activeJob ? 'lg:col-span-4' : 'lg:col-span-5'} space-y-4">
+      <main class="{activeJob ? 'lg:col-span-4' : 'lg:col-span-5'} space-y-3">
         <!-- Top Search Bar & Counter -->
-        <div class="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-[var(--color-surface)] p-2.5 rounded-2xl border border-[var(--color-border-subtle)]">
+        <div class="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 bg-[var(--color-surface)] p-2 rounded-xl border border-[var(--color-border-subtle)]">
           <div class="relative flex-1">
-            <span class="absolute left-3 top-2.5 text-[var(--color-text-muted)]">
+            <span class="absolute left-3 top-2 text-neutral-400">
               <Icon name="search" size={14} />
             </span>
             <input
               type="text"
-              placeholder="Cari judul posisi, keahlian, atau nama perusahaan..."
+              placeholder="Cari judul posisi, keahlian, teknologi, atau perusahaan..."
               bind:value={searchQuery}
               oninput={loadJobs}
-              class="w-full text-xs pl-8 pr-8 py-2 rounded-xl bg-[var(--color-page)] border border-[var(--color-border-subtle)] text-[var(--color-text-heading)] placeholder-[var(--color-text-muted)] focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)]"
+              class="w-full text-xs pl-8 pr-8 py-1.5 rounded-lg bg-white border border-[var(--color-border-subtle)] text-black placeholder-neutral-400 focus:outline-none focus:ring-1 focus:ring-black"
             />
             {#if searchQuery}
               <button
                 onclick={() => { searchQuery = ''; loadJobs(); }}
-                class="absolute right-2.5 top-2.5 text-[var(--color-text-muted)] hover:text-[var(--color-text-heading)] cursor-pointer"
+                class="absolute right-2.5 top-2 text-neutral-400 hover:text-black cursor-pointer"
               >
                 <Icon name="x" size={12} />
               </button>
             {/if}
           </div>
 
-          <div class="flex items-center gap-2 px-2 text-xs text-[var(--color-text-secondary)]">
+          <div class="flex items-center gap-2 px-2 text-xs text-neutral-600">
             {#if loading}
-              <span class="flex items-center gap-1.5 text-[var(--color-text-muted)]">
-                <span class="w-3 h-3 border-2 border-[var(--color-border-strong)] border-t-[var(--color-text-heading)] rounded-full animate-spin"></span>
+              <span class="flex items-center gap-1.5 text-neutral-500">
+                <span class="w-3 h-3 border-2 border-neutral-400 border-t-black rounded-full animate-spin"></span>
                 Memperbarui...
               </span>
             {:else}
               <span class="font-mono text-[11px]">
-                <strong>{jobs.length}</strong> lowongan ditemukan
+                <strong class="text-black">{jobs.length}</strong> lowongan ditemukan
               </span>
             {/if}
           </div>
         </div>
 
-        <!-- Active Filter Pills Bar (if any) -->
-        {#if selectedRole !== 'all' || selectedExperience !== 'all' || selectedArea !== 'all' || selectedSource !== 'all' || onlyNew}
+        <!-- Active Filter Pills Bar (Strict Monochrome) -->
+        {#if selectedRole !== 'all' || selectedExperience !== 'all' || selectedArea !== 'all' || selectedSource !== 'all' || selectedCompany !== 'all' || onlyNew}
           <div class="flex flex-wrap items-center gap-1.5 text-xs">
-            <span class="text-[11px] font-mono text-[var(--color-text-muted)]">Aktif:</span>
+            <span class="text-[11px] font-mono text-neutral-500">Aktif:</span>
             {#if selectedRole !== 'all'}
               <span class="ui-chip ui-chip-active text-[11px] gap-1">
                 Role: {selectedRole}
@@ -539,6 +593,12 @@
               <span class="ui-chip ui-chip-active text-[11px] gap-1">
                 Exp: {selectedExperience}
                 <button onclick={() => { selectedExperience = 'all'; loadJobs(); }} class="cursor-pointer ml-0.5"><Icon name="x" size={10} /></button>
+              </span>
+            {/if}
+            {#if selectedCompany !== 'all'}
+              <span class="ui-chip ui-chip-active text-[11px] gap-1">
+                PT: {selectedCompany}
+                <button onclick={() => { selectedCompany = 'all'; loadJobs(); }} class="cursor-pointer ml-0.5"><Icon name="x" size={10} /></button>
               </span>
             {/if}
             {#if selectedArea !== 'all'}
@@ -564,87 +624,113 @@
 
         <!-- Empty State -->
         {#if jobs.length === 0 && !loading}
-          <div class="text-center py-16 px-4 bg-[var(--color-surface)] rounded-2xl border border-[var(--color-border-subtle)] space-y-2">
-            <div class="w-10 h-10 rounded-full bg-[var(--color-page)] border border-[var(--color-border)] mx-auto flex items-center justify-center text-[var(--color-text-muted)]">
+          <div class="text-center py-16 px-4 bg-[var(--color-surface)] rounded-xl border border-[var(--color-border-subtle)] space-y-2">
+            <div class="w-10 h-10 rounded-full bg-white border border-neutral-300 mx-auto flex items-center justify-center text-neutral-500">
               <Icon name="search" size={18} />
             </div>
-            <p class="text-sm font-semibold text-[var(--color-text-heading)]">Tidak ada lowongan yang sesuai kriteria.</p>
-            <p class="text-xs text-[var(--color-text-secondary)] max-w-sm mx-auto">
-              Coba perluas filter role atau level pengalaman, atau klik "Scrape Sekarang" untuk mengambil data terbaru.
+            <p class="text-sm font-semibold text-black">Tidak ada lowongan yang sesuai kriteria.</p>
+            <p class="text-xs text-neutral-500 max-w-sm mx-auto">
+              Coba perluas filter role, perusahaan, atau level pengalaman, atau klik "Scrape Sekarang".
             </p>
           </div>
         {:else}
-          <!-- Card Feed Grid -->
-          <!-- In 5-column mode: 3 cols; In 4-column mode: 2 cols -->
-          <div class="grid grid-cols-1 md:grid-cols-2 {activeJob ? 'xl:grid-cols-2' : 'xl:grid-cols-3'} gap-3">
+          <!-- Card Feed Grid: Configured to fit 4 cards across on desktop viewports -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 {activeJob ? 'xl:grid-cols-3 2xl:grid-cols-4' : 'xl:grid-cols-4 2xl:grid-cols-4'} gap-2.5">
             {#each jobs as j}
               <div
                 role="button"
                 tabindex="0"
                 onclick={() => selectJob(j)}
                 onkeydown={(e) => e.key === 'Enter' && selectJob(j)}
-                class="text-left bg-[var(--color-page)] rounded-2xl p-4 border transition duration-150 flex flex-col justify-between cursor-pointer group hover:border-[var(--color-border-strong)] hover:shadow-xs {activeJob && activeJob.id === j.id ? 'border-[var(--color-accent)] ring-2 ring-[var(--color-accent)]/40 bg-[var(--color-accent-soft)]/20' : (j.is_new ? 'border-[#FAFF7E] bg-[var(--color-surface)]/60' : 'border-[var(--color-border-subtle)]')}"
+                class="text-left bg-white rounded-xl p-3 border transition duration-150 flex flex-col justify-between cursor-pointer group hover:border-black hover:shadow-xs {activeJob && activeJob.id === j.id ? 'border-black ring-2 ring-black/20 bg-neutral-50' : (j.is_new ? 'border-black/40 bg-neutral-50/50' : 'border-[var(--color-border-subtle)]')}"
               >
-                <div class="space-y-2.5">
-                  <!-- Header badges -->
-                  <div class="flex flex-wrap items-center gap-1.5 text-[10px] font-mono">
+                <div class="space-y-2">
+                  <!-- Header: Company Logo + Title/Company + Badges -->
+                  <div class="flex items-start gap-2.5">
+                    <!-- Company Logo thumbnail with letter avatar fallback -->
+                    <div class="w-9 h-9 rounded-lg border border-neutral-200 bg-white p-0.5 flex items-center justify-center shrink-0 overflow-hidden shadow-2xs">
+                      {#if j.company_logo}
+                        <img
+                          src={j.company_logo}
+                          alt={j.company}
+                          class="w-full h-full object-contain"
+                          onerror={(e) => { e.currentTarget.style.display = 'none'; if (e.currentTarget.nextElementSibling) e.currentTarget.nextElementSibling.style.display = 'flex'; }}
+                        />
+                        <span class="w-full h-full bg-neutral-100 text-black font-mono font-bold text-xs items-center justify-center hidden">
+                          {j.company ? j.company.charAt(0).toUpperCase() : 'J'}
+                        </span>
+                      {:else}
+                        <span class="w-full h-full bg-neutral-100 text-black font-mono font-bold text-xs flex items-center justify-center">
+                          {j.company ? j.company.charAt(0).toUpperCase() : 'J'}
+                        </span>
+                      {/if}
+                    </div>
+
+                    <!-- Title & Company name -->
+                    <div class="min-w-0 flex-1">
+                      <h3 class="text-xs font-bold text-black line-clamp-2 leading-snug group-hover:underline">
+                        {j.title}
+                      </h3>
+                      <!-- Clickable company name filters across aggregators -->
+                      <button
+                        type="button"
+                        onclick={(e) => { e.stopPropagation(); filterByCompany(j.company); }}
+                        class="text-[11px] text-neutral-600 hover:text-black hover:underline truncate text-left cursor-pointer font-medium block max-w-full mt-0.5"
+                        title="Filter hanya perusahaan ini"
+                      >
+                        {j.company}
+                      </button>
+                    </div>
+
+                    <!-- NEW badge if applicable -->
                     {#if j.is_new}
-                      <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[var(--color-highlight)] text-[#121212] font-semibold border border-[var(--color-border)]">
-                        <span class="w-1.5 h-1.5 rounded-full bg-[#121212]"></span>
+                      <span class="shrink-0 px-1.5 py-0.5 rounded bg-black text-white text-[9px] font-mono font-bold">
                         NEW
                       </span>
                     {/if}
+                  </div>
 
+                  <!-- Metadata Badges row -->
+                  <div class="flex flex-wrap items-center gap-1 text-[10px] font-mono">
                     <!-- Source badge -->
                     {#if j.sources && j.sources.length > 1}
-                      <span class="px-2 py-0.5 rounded-full bg-[var(--color-surface)] text-[var(--color-text-heading)] border border-[var(--color-border)] font-semibold">
+                      <span class="px-1.5 py-0.5 rounded bg-neutral-100 text-black border border-neutral-300 font-semibold">
                         {j.sources.length} SITUS
                       </span>
                     {:else}
-                      <span class="px-2 py-0.5 rounded-full bg-[var(--color-surface)] text-[var(--color-text-secondary)] border border-[var(--color-border-subtle)] uppercase">
+                      <span class="px-1.5 py-0.5 rounded bg-neutral-100 text-neutral-700 border border-neutral-200 uppercase">
                         {j.source || 'PORTAL'}
                       </span>
                     {/if}
 
                     <!-- Role Category badge -->
-                    <span class="px-2 py-0.5 rounded-full bg-[var(--color-surface-muted)] text-[var(--color-text-secondary)] border border-[var(--color-border-subtle)]">
+                    <span class="px-1.5 py-0.5 rounded bg-neutral-100 text-neutral-800 border border-neutral-200">
                       {formatRole(j.role_category)}
                     </span>
 
                     <!-- Experience Bracket badge -->
                     {#if j.experience_level && j.experience_level !== 'unspecified'}
-                      <span class="px-2 py-0.5 rounded-full bg-[var(--color-accent-soft)] text-[var(--color-on-accent)] border border-[var(--color-accent)]">
+                      <span class="px-1.5 py-0.5 rounded bg-black text-white font-medium">
                         {j.experience_level.toUpperCase()}
                       </span>
                     {/if}
                   </div>
 
-                  <!-- Title & Company -->
-                  <div>
-                    <h3 class="text-sm font-semibold text-[var(--color-text-heading)] group-hover:text-[#121212] line-clamp-2 leading-snug">
-                      {j.title}
-                    </h3>
-                    <p class="text-xs text-[var(--color-text-secondary)] mt-1 flex items-center gap-1.5">
-                      <Icon name="building" size={12} class="text-[var(--color-text-muted)] shrink-0" />
-                      <span class="truncate">{j.company}</span>
-                    </p>
-                  </div>
-
                   <!-- Experience requirement snippet -->
-                  <div class="pt-1 flex items-center gap-1.5 text-[11px] text-[var(--color-text-secondary)] font-mono">
-                    <Icon name="briefcase" size={12} class="text-[var(--color-text-muted)] shrink-0" />
+                  <div class="text-[11px] text-neutral-600 font-mono truncate flex items-center gap-1">
+                    <Icon name="briefcase" size={11} class="text-neutral-400 shrink-0" />
                     <span class="truncate">{formatExp(j)}</span>
                   </div>
 
                   <!-- Location & Salary -->
-                  <div class="flex items-center justify-between text-[11px] text-[var(--color-text-muted)] pt-1">
-                    <span class="flex items-center gap-1 truncate max-w-[65%]">
-                      <Icon name="mapPin" size={11} class="shrink-0" />
+                  <div class="flex items-center justify-between text-[11px] text-neutral-500 pt-0.5">
+                    <span class="flex items-center gap-1 truncate max-w-[60%]">
+                      <Icon name="mapPin" size={11} class="shrink-0 text-neutral-400" />
                       <span class="truncate">{formatArea(j.area)}</span>
                     </span>
 
                     {#if j.salary}
-                      <span class="text-[#202020] font-medium font-mono text-[10px] truncate">
+                      <span class="text-black font-semibold font-mono text-[10px] truncate">
                         {j.salary}
                       </span>
                     {/if}
@@ -652,15 +738,15 @@
                 </div>
 
                 <!-- Footer Card -->
-                <div class="mt-3 pt-2.5 border-t border-[var(--color-border-subtle)] flex items-center justify-between text-[11px] text-[var(--color-text-muted)]">
-                  <span class="font-mono flex items-center gap-1">
+                <div class="mt-2.5 pt-2 border-t border-[var(--color-border-subtle)] flex items-center justify-between text-[11px] text-neutral-500">
+                  <span class="font-mono flex items-center gap-1 text-[10px]">
                     <Icon name="clock" size={11} />
                     {formatTime(j.posted_at || j.first_seen_at)}
                   </span>
 
-                  <span class="text-xs font-semibold text-[var(--color-text-secondary)] group-hover:text-[var(--color-text-heading)] flex items-center gap-1">
+                  <span class="text-xs font-semibold text-neutral-700 group-hover:text-black flex items-center gap-0.5">
                     <span>Lihat</span>
-                    <Icon name="arrowDownRight" size={12} />
+                    <Icon name="arrowDownRight" size={11} />
                   </span>
                 </div>
               </div>
@@ -671,12 +757,13 @@
 
       <!-- ========================================================= -->
       <!-- COLUMN 3: SIDEBAR DETAIL (1 part, visible when card clicked) -->
+      <!-- Sticky, No outer section padding                         -->
       <!-- ========================================================= -->
       {#if activeJob}
-        <aside class="lg:col-span-1 bg-[var(--color-surface)] p-4 rounded-2xl border border-[var(--color-border)] space-y-4 max-h-[calc(100vh-6rem)] overflow-y-auto sticky top-16 shadow-sm">
+        <aside class="lg:col-span-1 sticky top-16 max-h-[calc(100vh-4.75rem)] overflow-y-auto space-y-3.5 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-3 shadow-xs">
           <!-- Top Close & Action header -->
-          <div class="flex items-center justify-between pb-3 border-b border-[var(--color-border-subtle)]">
-            <span class="text-xs font-mono uppercase tracking-wider text-[var(--color-text-muted)]">
+          <div class="flex items-center justify-between pb-2 border-b border-[var(--color-border-subtle)]">
+            <span class="text-xs font-mono uppercase tracking-wider text-neutral-500">
               Detail Loker
             </span>
             <div class="flex items-center gap-1.5">
@@ -684,7 +771,7 @@
                 href={activeJob.url}
                 target="_blank"
                 rel="noopener noreferrer"
-                class="control-pill px-2.5 py-1 text-[11px] font-mono flex items-center gap-1 text-[var(--color-text-heading)]"
+                class="control-pill px-2.5 py-1 text-[11px] font-mono flex items-center gap-1 text-black font-semibold"
                 title="Buka Halaman Loker Asli"
               >
                 <span>Buka</span>
@@ -693,103 +780,132 @@
 
               <button
                 onclick={() => (activeJob = null)}
-                class="p-1 rounded-full text-[var(--color-text-muted)] hover:text-[var(--color-text-heading)] hover:bg-[var(--color-surface-hover)] cursor-pointer"
+                class="p-1 rounded-md text-neutral-500 hover:text-black hover:bg-neutral-200/60 cursor-pointer"
                 title="Tutup Detail"
               >
-                <Icon name="x" size={15} />
+                <Icon name="x" size={14} />
               </button>
             </div>
           </div>
 
-          <!-- Title & Company -->
-          <div class="space-y-1.5">
-            <h2 class="text-sm font-semibold text-[var(--color-text-heading)] leading-snug">
-              {activeJob.title}
-            </h2>
-            <div class="text-xs text-[var(--color-text-secondary)] space-y-1">
-              <p class="flex items-center gap-1.5 font-medium">
-                <Icon name="building" size={13} class="text-[var(--color-text-muted)] shrink-0" />
-                <span>{activeJob.company}</span>
-              </p>
+          <!-- Company Logo + Title + Company (flush) -->
+          <div class="space-y-2">
+            <div class="flex items-start gap-2.5">
+              <!-- Detail Company Logo -->
+              <div class="w-11 h-11 rounded-lg border border-neutral-300 bg-white p-0.5 flex items-center justify-center shrink-0 overflow-hidden shadow-2xs">
+                {#if activeJob.company_logo}
+                  <img
+                    src={activeJob.company_logo}
+                    alt={activeJob.company}
+                    class="w-full h-full object-contain"
+                    onerror={(e) => { e.currentTarget.style.display = 'none'; if (e.currentTarget.nextElementSibling) e.currentTarget.nextElementSibling.style.display = 'flex'; }}
+                  />
+                  <span class="w-full h-full bg-neutral-100 text-black font-mono font-bold text-sm items-center justify-center hidden">
+                    {activeJob.company ? activeJob.company.charAt(0).toUpperCase() : 'J'}
+                  </span>
+                {:else}
+                  <span class="w-full h-full bg-neutral-100 text-black font-mono font-bold text-sm flex items-center justify-center">
+                    {activeJob.company ? activeJob.company.charAt(0).toUpperCase() : 'J'}
+                  </span>
+                {/if}
+              </div>
+
+              <div class="min-w-0 flex-1">
+                <h2 class="text-xs font-bold text-black leading-snug">
+                  {activeJob.title}
+                </h2>
+                <!-- Clickable company filter in detail -->
+                <button
+                  type="button"
+                  onclick={() => filterByCompany(activeJob.company)}
+                  class="text-xs text-neutral-600 hover:text-black hover:underline font-semibold mt-0.5 text-left truncate block max-w-full cursor-pointer"
+                  title="Filter hanya perusahaan ini"
+                >
+                  {activeJob.company}
+                </button>
+              </div>
+            </div>
+
+            <div class="text-xs text-neutral-600 space-y-1 pt-1 font-mono">
               <p class="flex items-center gap-1.5">
-                <Icon name="mapPin" size={13} class="text-[var(--color-text-muted)] shrink-0" />
-                <span>{activeJob.location_raw || formatArea(activeJob.area)}</span>
+                <Icon name="mapPin" size={12} class="text-neutral-400 shrink-0" />
+                <span class="truncate">{activeJob.location_raw || formatArea(activeJob.area)}</span>
               </p>
               {#if activeJob.salary}
-                <p class="flex items-center gap-1.5 font-mono text-[var(--color-text-heading)]">
-                  <Icon name="banknote" size={13} class="text-[var(--color-text-muted)] shrink-0" />
+                <p class="flex items-center gap-1.5 font-bold text-black">
+                  <Icon name="banknote" size={12} class="text-neutral-400 shrink-0" />
                   <span>{activeJob.salary}</span>
                 </p>
               {/if}
             </div>
           </div>
 
-          <!-- Role & Experience Spec -->
-          <div class="p-3 bg-[var(--color-page)] rounded-xl border border-[var(--color-border-subtle)] space-y-2">
-            <div class="text-[11px] font-mono uppercase tracking-wider text-[var(--color-text-muted)]">
+          <!-- Role & Experience Spec (flush, no outer padding) -->
+          <div class="space-y-1.5 pt-2.5 border-t border-[var(--color-border-subtle)]">
+            <div class="text-[10px] font-mono uppercase tracking-wider text-neutral-500">
               Klasifikasi Sistem
             </div>
             <div class="space-y-1 text-xs">
               <div class="flex items-center justify-between">
-                <span class="text-[var(--color-text-secondary)]">Kategori:</span>
-                <span class="font-semibold text-[var(--color-text-heading)]">{formatRole(activeJob.role_category)}</span>
+                <span class="text-neutral-500">Kategori:</span>
+                <span class="font-bold text-black">{formatRole(activeJob.role_category)}</span>
               </div>
               <div class="flex items-center justify-between">
-                <span class="text-[var(--color-text-secondary)]">Level:</span>
-                <span class="font-semibold text-[var(--color-text-heading)]">{activeJob.experience_level ? activeJob.experience_level.toUpperCase() : 'FLEKSIBEL'}</span>
+                <span class="text-neutral-500">Level:</span>
+                <span class="font-bold text-black">{activeJob.experience_level ? activeJob.experience_level.toUpperCase() : 'FLEKSIBEL'}</span>
               </div>
               {#if activeJob.min_years !== null || activeJob.max_years !== null}
                 <div class="flex items-center justify-between text-[11px] font-mono">
-                  <span class="text-[var(--color-text-secondary)]">Rentang:</span>
-                  <span class="text-[var(--color-text-heading)]">
+                  <span class="text-neutral-500">Rentang:</span>
+                  <span class="text-black font-semibold">
                     {activeJob.min_years !== null ? activeJob.min_years : 0} - {activeJob.max_years !== null ? activeJob.max_years : '+'} th
                   </span>
                 </div>
               {/if}
               {#if activeJob.experience_raw}
-                <div class="pt-1 border-t border-[var(--color-border-subtle)] text-[10px] font-mono text-[var(--color-text-muted)]">
+                <div class="pt-1 text-[10px] font-mono text-neutral-500">
                   Kutipan: "{activeJob.experience_raw}"
                 </div>
               {/if}
             </div>
           </div>
 
-          <!-- Visual Timeline Section -->
-          <div class="space-y-2 pt-1 border-t border-[var(--color-border-subtle)]">
-            <div class="text-[11px] font-mono uppercase tracking-wider text-[var(--color-text-muted)]">
+          <!-- Timeline Section (flush) -->
+          <div class="space-y-1.5 pt-2.5 border-t border-[var(--color-border-subtle)]">
+            <div class="text-[10px] font-mono uppercase tracking-wider text-neutral-500">
               Timeline Loker
             </div>
             <Timeline job={activeJob} />
           </div>
 
-          <!-- Description Section -->
-          <div class="space-y-2 pt-2 border-t border-[var(--color-border-subtle)]">
-            <div class="text-[11px] font-mono uppercase tracking-wider text-[var(--color-text-muted)]">
+          <!-- Description Section (flush) -->
+          <div class="space-y-1.5 pt-2.5 border-t border-[var(--color-border-subtle)]">
+            <div class="text-[10px] font-mono uppercase tracking-wider text-neutral-500">
               Deskripsi Pekerjaan
             </div>
             {#if activeJob.description && activeJob.description.trim()}
-              <div class="text-xs text-[var(--color-text-secondary)] whitespace-pre-wrap leading-relaxed max-h-60 overflow-y-auto pr-1 border border-[var(--color-border-subtle)] bg-[var(--color-page)] p-2.5 rounded-xl font-sans">
+              <div class="text-xs text-neutral-700 whitespace-pre-wrap leading-relaxed max-h-52 overflow-y-auto pr-1 border border-[var(--color-border-subtle)] bg-white p-2 rounded-lg font-sans">
                 {activeJob.description}
               </div>
             {:else}
-              <p class="text-xs text-[var(--color-text-muted)] italic bg-[var(--color-page)] p-3 rounded-xl border border-[var(--color-border-subtle)]">
-                Deskripsi lengkap tersedia langsung di portal perekrut. Klik tombol di bawah untuk membacanya.
+              <p class="text-xs text-neutral-400 italic bg-white p-2.5 rounded-lg border border-[var(--color-border-subtle)]">
+                Deskripsi lengkap tersedia langsung di portal perekrut.
               </p>
             {/if}
           </div>
 
-          <!-- Direct Apply / Platform Links -->
-          <div class="pt-2 border-t border-[var(--color-border-subtle)] space-y-2">
+          <!-- Direct Apply / Platform Links (flush) -->
+          <div class="pt-2.5 border-t border-[var(--color-border-subtle)] space-y-1.5">
             {#if activeJob.sources && activeJob.sources.length > 1 && activeJob.urls}
               <div class="space-y-1">
-                <span class="text-[11px] font-mono text-[var(--color-text-muted)]">Tersedia di {activeJob.sources.length} portal:</span>
-                <div class="grid grid-cols-2 gap-1.5 pt-1">
+                <span class="text-[10px] font-mono text-neutral-500">Tersedia di {activeJob.sources.length} portal:</span>
+                <div class="grid grid-cols-2 gap-1.5 pt-0.5">
                   {#each activeJob.sources as src}
                     <a
                       href={activeJob.urls[src]}
                       target="_blank"
                       rel="noopener noreferrer"
-                      class="control-pill px-2 py-1.5 text-xs text-center truncate capitalize text-[var(--color-text-heading)] font-medium"
+                      class="control-pill px-2 py-1 text-xs text-center truncate capitalize text-black font-semibold"
                     >
                       {src} ↗
                     </a>
@@ -801,7 +917,7 @@
                 href={activeJob.url}
                 target="_blank"
                 rel="noopener noreferrer"
-                class="control-pill control-pill-active w-full py-2 text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer text-decoration-none"
+                class="control-pill control-pill-active w-full py-2 text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer text-decoration-none"
               >
                 <span>Buka di {activeJob.source ? activeJob.source.toUpperCase() : 'Portal'}</span>
                 <Icon name="arrowUpRight" size={13} />
@@ -814,30 +930,30 @@
     </div>
   </div>
 
-  <!-- Add Saved Search Modal -->
+  <!-- Add Saved Search Modal (Strict Monochrome) -->
   {#if showAddSearch}
-    <div class="fixed inset-0 bg-[#121212]/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-      <div class="bg-[var(--color-page)] rounded-2xl max-w-md w-full p-6 shadow-xl border border-[var(--color-border)] space-y-4">
+    <div class="fixed inset-0 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+      <div class="bg-white rounded-2xl max-w-md w-full p-5 shadow-2xl border border-[var(--color-border)] space-y-4">
         <div class="flex items-center justify-between pb-3 border-b border-[var(--color-border-subtle)]">
           <div class="flex items-center gap-2">
-            <span class="w-6 h-6 rounded-full bg-[var(--color-accent)] text-[#121212] flex items-center justify-center">
+            <span class="w-6 h-6 rounded-full bg-black text-white flex items-center justify-center">
               <Icon name="plus" size={13} />
             </span>
-            <h3 class="text-sm font-semibold text-[var(--color-text-heading)]">
+            <h3 class="text-sm font-bold text-black">
               Simpan Pencarian Otomatis
             </h3>
           </div>
           <button
             onclick={() => (showAddSearch = false)}
-            class="text-[var(--color-text-muted)] hover:text-[var(--color-text-heading)] cursor-pointer p-1"
+            class="text-neutral-500 hover:text-black cursor-pointer p-1"
           >
             <Icon name="x" size={15} />
           </button>
         </div>
 
-        <form onsubmit={submitNewSearch} class="space-y-4">
+        <form onsubmit={submitNewSearch} class="space-y-3.5">
           <div>
-            <label for="kw-input" class="block text-xs font-mono uppercase tracking-wider text-[var(--color-text-secondary)] mb-1">
+            <label for="kw-input" class="block text-xs font-mono uppercase tracking-wider text-neutral-600 mb-1">
               Kata Kunci Posisi / Skill
             </label>
             <input
@@ -846,18 +962,18 @@
               required
               placeholder="e.g. Junior Backend Engineer, Golang, React"
               bind:value={newKeyword}
-              class="w-full text-xs px-3 py-2 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text-heading)] focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)]"
+              class="w-full text-xs px-3 py-2 rounded-lg border border-[var(--color-border)] bg-white text-black focus:outline-none focus:ring-1 focus:ring-black"
             />
           </div>
 
           <div>
-            <label for="area-select" class="block text-xs font-mono uppercase tracking-wider text-[var(--color-text-secondary)] mb-1">
+            <label for="area-select" class="block text-xs font-mono uppercase tracking-wider text-neutral-600 mb-1">
               Target Area
             </label>
             <select
               id="area-select"
               bind:value={newArea}
-              class="w-full text-xs px-3 py-2 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text-heading)] focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)]"
+              class="w-full text-xs px-3 py-2 rounded-lg border border-[var(--color-border)] bg-white text-black focus:outline-none focus:ring-1 focus:ring-black"
             >
               {#each areas as a}
                 <option value={a.id}>{a.label}</option>
@@ -866,36 +982,36 @@
           </div>
 
           <div>
-            <span class="block text-xs font-mono uppercase tracking-wider text-[var(--color-text-secondary)] mb-2">
+            <span class="block text-xs font-mono uppercase tracking-wider text-neutral-600 mb-1.5">
               Sumber Platform Tiap Jam
             </span>
             <div class="grid grid-cols-2 gap-2 text-xs font-mono">
               <label class="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" bind:checked={newSources.jobstreet} class="accent-[var(--color-accent)] rounded" />
+                <input type="checkbox" bind:checked={newSources.jobstreet} class="accent-black rounded" />
                 JobStreet
               </label>
               <label class="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" bind:checked={newSources.kalibrr} class="accent-[var(--color-accent)] rounded" />
+                <input type="checkbox" bind:checked={newSources.kalibrr} class="accent-black rounded" />
                 Kalibrr
               </label>
               <label class="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" bind:checked={newSources.linkedin} class="accent-[var(--color-accent)] rounded" />
+                <input type="checkbox" bind:checked={newSources.linkedin} class="accent-black rounded" />
                 LinkedIn
               </label>
               <label class="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" bind:checked={newSources.glints} class="accent-[var(--color-accent)] rounded" />
+                <input type="checkbox" bind:checked={newSources.glints} class="accent-black rounded" />
                 Glints
               </label>
               <label class="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" bind:checked={newSources.dealls} class="accent-[var(--color-accent)] rounded" />
+                <input type="checkbox" bind:checked={newSources.dealls} class="accent-black rounded" />
                 Dealls
               </label>
               <label class="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" bind:checked={newSources.karir} class="accent-[var(--color-accent)] rounded" />
+                <input type="checkbox" bind:checked={newSources.karir} class="accent-black rounded" />
                 Karir.com
               </label>
               <label class="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" bind:checked={newSources.techinasia} class="accent-[var(--color-accent)] rounded" />
+                <input type="checkbox" bind:checked={newSources.techinasia} class="accent-black rounded" />
                 Tech in Asia
               </label>
             </div>
@@ -905,13 +1021,13 @@
             <button
               type="button"
               onclick={() => (showAddSearch = false)}
-              class="control-pill px-3 py-1.5 text-xs text-[var(--color-text-secondary)] hover:text-[var(--color-text-heading)] cursor-pointer"
+              class="control-pill px-3 py-1.5 text-xs text-neutral-600 hover:text-black cursor-pointer"
             >
               Batal
             </button>
             <button
               type="submit"
-              class="control-pill control-pill-active px-4 py-1.5 text-xs font-semibold cursor-pointer"
+              class="control-pill control-pill-active px-4 py-1.5 text-xs font-bold cursor-pointer"
             >
               Simpan Pencarian
             </button>

@@ -1,6 +1,7 @@
 import sqlite3
 import datetime
 import json
+import os
 from typing import Optional, List, Dict, Any, Tuple
 from jobhunt.models import Job
 from jobhunt.classifier import classify_job
@@ -8,6 +9,7 @@ from jobhunt.classifier import classify_job
 class Database:
     def __init__(self, db_path: str = "data/jobs.db"):
         self.db_path = db_path
+        os.makedirs(os.path.dirname(os.path.abspath(self.db_path)), exist_ok=True)
         self._init_db()
 
     def _get_connection(self) -> sqlite3.Connection:
