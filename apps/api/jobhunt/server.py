@@ -314,8 +314,12 @@ def execute_batch(db, features, gate, run_id, keyword=None, area="all", sources=
                 runner.run_single(keyword, area_filter=area, source_names=sources, on_progress=progress)
             else:
                 runner.run_all_active(on_progress=progress)
-        status = "completed" if not stats["errors"] else (
-            "failed" if stats["errors"] == stats["processed_tasks"] else "partial")
+        status = (
+            "skipped" if stats["total_tasks"] == 0 else
+            "completed" if not stats["errors"] else
+            "failed" if stats["errors"] == stats["processed_tasks"] else
+            "partial"
+        )
         features.update_batch(run_id, status=status, finished_at=utc_now())
     except Exception as exc:
         logger.exception("Collection run %s failed", run_id)
