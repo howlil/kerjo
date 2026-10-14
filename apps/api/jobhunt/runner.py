@@ -5,6 +5,7 @@ import time
 from typing import Dict, Callable, List, Any, Optional
 from jobhunt.db import Database
 from jobhunt.models import Job, SourceResult
+from jobhunt.freshness import posting_age_status, parse_posted_at
 from jobhunt.sources.jobstreet import fetch_jobstreet
 from jobhunt.sources.kalibrr import fetch_kalibrr
 from jobhunt.sources.linkedin import fetch_linkedin
@@ -228,19 +229,33 @@ class JobRunner:
                 "error": source_result.error_message,
             }
 
-        # Filter by area if specific area is desired
+        # The publication date is mandatory for 14-day discovery. Never
+        # substitute first_seen_at / last_seen_at / updated_at for posted_at.
         matched_jobs = source_result.jobs
         if area_filter and area_filter != "all":
-            # Keep jobs matching the area OR unspecified
             matched_jobs = [j for j in matched_jobs if j.area in (area_filter, "unspecified")]
 
-        new_count, total = self.db.upsert_jobs(matched_jobs)
+        age_counts = {"recent": 0, "old": 0, "unknown": 0, "future": 0}
+        recent_jobs = []
+        for job in matched_jobs:
+            age = posting_age_status(job.posted_at)
+            age_counts[age] += 1
+            if age == "recent":
+                # Persist normalized timezone-aware UTC for deterministic sorting.
+                job.posted_at = parse_posted_at(job.posted_at).isoformat()
+                recent_jobs.append(job)
+
+        new_count, _ = self.db.upsert_jobs(recent_jobs)
         status = "partial" if source_result.error_message else "success"
         self.db.record_run(
             source=source_name,
             status=status,
             jobs_found=len(matched_jobs),
             jobs_new=new_count,
+            jobs_recent=age_counts["recent"],
+            filtered_old=age_counts["old"],
+            filtered_unknown=age_counts["unknown"],
+            filtered_future=age_counts["future"],
             error_message=source_result.error_message,
             search_id=search_id,
         )
@@ -250,6 +265,10 @@ class JobRunner:
             "keyword": keyword,
             "status": status,
             "found_count": len(matched_jobs),
+            "recent_count": age_counts["recent"],
+            "filtered_old": age_counts["old"],
+            "filtered_unknown": age_counts["unknown"],
+            "filtered_future": age_counts["future"],
             "new_count": new_count,
             "error": source_result.error_message,
         }

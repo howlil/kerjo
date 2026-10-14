@@ -230,11 +230,13 @@
       currentRun = run;
       if (['completed','partial','failed','skipped'].includes(run.status)) {
         runningScraper = false;
+        const excluded = (run.filtered_old || 0) + (run.filtered_unknown || 0) + (run.filtered_future || 0);
+        const detail = excluded ? (' · ' + excluded + ' dikecualikan (lama/tanggal tidak valid)') : '';
         notice = run.status === 'completed'
-          ? ('Scraping selesai: ' + run.jobs_new + ' lowongan baru')
+          ? ('Scraping selesai: ' + run.jobs_new + ' lowongan baru (14 hari terakhir)' + detail)
           : run.status === 'skipped'
             ? 'Tidak ada saved search aktif; scraper tidak dijalankan.'
-            : ('Scraping ' + run.status + ' — ' + run.errors + ' sumber mengalami error');
+            : ('Scraping ' + run.status + ' — ' + run.errors + ' sumber mengalami error' + detail);
         await Promise.all([loadJobs(),loadRuns(),loadCompanies(),loadSourceHealth()]);
       }
     } catch(e) { runningScraper=false; notice = 'Error saat memantau worker: '+e.message; }
@@ -245,7 +247,7 @@
     try {
       const result = await api('/api/run',jsonOptions('POST',{}));
       currentRun = {id:result.run_id,status:'queued',processed_tasks:0,total_tasks:0,jobs_new:0};
-      notice = 'Scraping berjalan di worker. Dashboard tetap responsif.';
+      notice = 'Manual scrape dimulai. Hanya lowongan dengan tanggal publikasi ≤14 hari yang akan ditampilkan.';
     } catch(e) { runningScraper=false; notice='Gagal menjalankan scraper: '+e.message; }
   }
 
@@ -442,7 +444,7 @@
       <span class="app-brand-name">kerjo</span>
     </a>
     <span class="app-divider"></span>
-    <span class="app-context">JOB DISCOVERY / JAKARTA</span>
+    <span class="app-context">JOB DISCOVERY / LAST 14 DAYS</span>
     <nav class="app-view-tabs" aria-label="Kerjo views">
       {#each [{id:'discovery',title:'Discover'},{id:'applications',title:'Applications'},{id:'preferences',title:'Preferences'}] as view}
         <button type="button" class:is-active={currentView===view.id}
@@ -453,7 +455,7 @@
       {/each}
     </nav>
     <div class="app-actions">
-      <span class="app-status">{runningScraper && currentRun ? 'Worker '+(currentRun.processed_tasks||0)+'/'+(currentRun.total_tasks||'?') : searches.length+' auto-search'}</span>
+      <span class="app-status">{runningScraper && currentRun ? 'Worker '+(currentRun.processed_tasks||0)+'/'+(currentRun.total_tasks||'?') : searches.length+' saved searches'}</span>
       <button class="ui-icon-button" type="button" onclick={toggleTheme} title={theme === 'dark' ? 'Light mode' : 'Dark mode'} aria-label="Ganti tema">
         <Icon name={theme === 'dark' ? 'sun' : 'moon'} size={16}/>
       </button>
@@ -461,7 +463,7 @@
       <span class="desktop-action"><Button onclick={markAllSeen}><Icon name="checkCircle" size={14}/>Tandai dilihat</Button></span>
       <Button onclick={() => showAddSearch = true}><Icon name="plus" size={14}/><span class="desktop-action">Tambah pencarian</span></Button>
       {/if}
-      <Button variant="primary" disabled={runningScraper} onclick={triggerRun}><Icon name="refresh" size={14}/><span>{runningScraper ? 'Scraping…' : 'Scrape sekarang'}</span></Button>
+      <Button variant="primary" disabled={runningScraper} onclick={triggerRun}><Icon name="refresh" size={14}/><span>{runningScraper ? 'Scraping…' : 'Scrape manual'}</span></Button>
     </div>
   {/snippet}
 
@@ -522,7 +524,7 @@
       {#if jobsError}
         <div class="ui-empty" role="alert"><strong>Gagal memuat lowongan</strong>{jobsError}<div style="margin-top:12px"><Button onclick={loadJobs}>Coba lagi</Button></div></div>
       {:else if !loading && visibleJobs.length === 0}
-        <div class="ui-empty"><strong>Tidak ada posisi yang cocok</strong>{showSavedOnly ? 'Belum ada lowongan yang disimpan secara lokal.' : 'Ubah filter atau pencarian untuk memperluas hasil.'}<div style="margin-top:12px"><Button onclick={() => { showSavedOnly = false; resetAllFilters(); }}>Reset filter</Button></div></div>
+        <div class="ui-empty"><strong>Tidak ada lowongan terverifikasi dalam 14 hari terakhir</strong>{showSavedOnly ? 'Belum ada lowongan baru dalam 14 hari terakhir yang tersimpan.' : 'Ubah filter atau pencarian untuk memperluas hasil.'}<div style="margin-top:12px"><Button onclick={() => { showSavedOnly = false; resetAllFilters(); }}>Reset filter</Button></div></div>
       {:else}
         <div class="job-board" class:is-list={displayMode === 'list'}>
           {#each visibleJobs as job (job.id)}
@@ -582,7 +584,7 @@
   <div class="ui-modal-backdrop" role="presentation">
     <section class="ui-modal" role="dialog" aria-modal="true" aria-labelledby="add-search-title">
       <div class="ui-modal-header">
-        <h2 id="add-search-title">Tambah pencarian otomatis</h2>
+        <h2 id="add-search-title">Tambah saved search</h2>
         <button type="button" class="ui-icon-button" onclick={() => showAddSearch = false} aria-label="Tutup dialog"><Icon name="x" size={16}/></button>
       </div>
       <form onsubmit={submitNewSearch}>

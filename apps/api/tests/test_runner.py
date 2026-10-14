@@ -2,6 +2,7 @@ import unittest
 import tempfile
 import os
 from jobhunt.db import Database
+from jobhunt.freshness import utc_now
 from jobhunt.runner import JobRunner
 from jobhunt.models import Job, SourceResult
 
@@ -36,6 +37,7 @@ class TestRunner(unittest.TestCase):
             location_raw="SCBD, Jakarta",
             area="jakarta_selatan",
             url="https://example.com/1",
+            posted_at=utc_now().isoformat(),
         )
         fake_scraper = FakeScraper([job])
         runner = JobRunner(db=self.db, sources={"fake": fake_scraper.fetch})

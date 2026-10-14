@@ -47,7 +47,7 @@ def parse_karir_payload(data: dict) -> list[Job]:
         elif s_low > 0:
             salary = f"Rp {s_low:,.0f}+".replace(",", ".")
 
-        posted_at = item.get("posted_at") or item.get("updated_at")
+        posted_at = item.get("posted_at")  # update timestamps cannot prove a new vacancy
         desc = (item.get("description") or item.get("job_description") or "").strip()
 
         jobs.append(

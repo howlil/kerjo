@@ -34,7 +34,7 @@
     <Icon name="mapPin" size={12}/>
     <span class="job-record-location" title={job.location_raw || formatArea(job.area)}>{job.location_raw || formatArea(job.area)}</span>
     {#if job.salary}<span class="job-record-salary" title={job.salary}>{job.salary}</span>{/if}
-    <span class="job-record-date">{formatTime(job.posted_at || job.first_seen_at)}</span>
+    <span class="job-record-date">{formatTime(job.posted_at)}</span>
   </div>
   <button type="button" class="ui-icon-button save-button" class:is-active={saved} onclick={() => onSave(job)} title={saved ? 'Hapus dari simpanan lokal' : 'Simpan posisi secara lokal'} aria-label={saved ? 'Hapus simpanan' : 'Simpan posisi'} aria-pressed={saved}>
     <Icon name="bookmark" size={15}/>

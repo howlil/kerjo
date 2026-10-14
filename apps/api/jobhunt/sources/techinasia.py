@@ -50,7 +50,7 @@ def parse_tia_payload(data: dict) -> list[Job]:
 
         is_remote = bool(item.get("is_remote"))
         work_type = item.get("work_arrangement") or item.get("job_type")
-        posted_at = item.get("published_at") or item.get("updated_at")
+        posted_at = item.get("published_at")  # edited_at is not publication time
         desc = (item.get("description") or "").strip()
         exp_min = item.get("experience_min")
         exp_max = item.get("experience_max")

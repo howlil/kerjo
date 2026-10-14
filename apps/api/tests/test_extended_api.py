@@ -9,6 +9,7 @@ import urllib.request
 from unittest.mock import patch
 
 from jobhunt.db import Database
+from jobhunt.freshness import utc_now
 from jobhunt.models import Job, SourceResult
 from jobhunt.server import create_server
 
@@ -19,11 +20,11 @@ class TestExtendedAPI(unittest.TestCase):
         self.db = Database(str(pathlib.Path(self.tmp.name) / "jobs.db"))
         self.db.upsert_jobs([
             Job(source="jobstreet",external_id="1",title="Backend Engineer",company="Acme",
-                location_raw="Jakarta Selatan",area="jakarta_selatan",url="https://example.org/a"),
+                location_raw="Jakarta Selatan",area="jakarta_selatan",url="https://example.org/a",posted_at=utc_now().isoformat()),
             Job(source="linkedin",external_id="2",title="Backend Engineer",company="Acme",
-                location_raw="Jakarta Selatan",area="jakarta_selatan",url="https://example.org/a?utm_source=linkedin"),
+                location_raw="Jakarta Selatan",area="jakarta_selatan",url="https://example.org/a?utm_source=linkedin",posted_at=utc_now().isoformat()),
             Job(source="jobstreet",external_id="3",title="Frontend Developer",company="Acme",
-                location_raw="Jakarta Selatan",area="jakarta_selatan",url="https://example.org/c"),
+                location_raw="Jakarta Selatan",area="jakarta_selatan",url="https://example.org/c",posted_at=utc_now().isoformat()),
         ])
         self.db.create_search("Backend",sources=["jobstreet"])
         self.server = create_server("127.0.0.1",0,self.db)
@@ -52,6 +53,25 @@ class TestExtendedAPI(unittest.TestCase):
         self.assertEqual(first["total"],2)
         self.assertEqual(second["total"],2)
         self.assertNotEqual(first["jobs"][0]["title"],second["jobs"][0]["title"])
+
+    def test_discovery_never_uses_first_seen_as_publication_date(self):
+        from datetime import timedelta
+        from jobhunt.freshness import utc_now
+        self.db.upsert_jobs([
+            Job(source="kalibrr", external_id="old-in-api", title="Backend Engineer",
+                company="Aged Co", area="jakarta_selatan", location_raw="Jakarta Selatan",
+                url="https://example.org/aged", posted_at=(utc_now()-timedelta(days=19)).isoformat()),
+            Job(source="kalibrr", external_id="undated-in-api", title="Backend Engineer",
+                company="Undated Co", area="jakarta_selatan", location_raw="Jakarta Selatan",
+                url="https://example.org/undated", posted_at=None),
+        ])
+        _, response=self.api("/api/jobs?limit=20&dedup=0")
+        self.assertEqual(response["max_post_age_days"], 14)
+        self.assertEqual(response["total"],3)
+        self.assertFalse(any(job["company"] in ("Aged Co", "Undated Co") for job in response["jobs"]))
+        _, companies=self.api("/api/companies")
+        self.assertFalse(any(c["company"] in ("Aged Co", "Undated Co") for c in companies["companies"]))
+        self.assertEqual(len(self.db.get_jobs(limit=None)),5)
 
     def test_scoped_seen_endpoint(self):
         _, jobs = self.api("/api/jobs?dedup=0")
@@ -112,7 +132,7 @@ class TestExtendedAPI(unittest.TestCase):
         extra = [Job(source="kalibrr", external_id="page-" + str(n),
                      title="Backend Engineer", company="Pagination Corp",
                      location_raw="Jakarta Selatan", area="jakarta_selatan",
-                     url="https://example.org/roles/" + str(n))
+                     url="https://example.org/roles/" + str(n), posted_at=utc_now().isoformat())
                  for n in range(125)]
         self.db.upsert_jobs(extra)
         seen_ids = set()

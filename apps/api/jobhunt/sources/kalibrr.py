@@ -66,7 +66,7 @@ def parse_kalibrr_payload(data: dict) -> list[Job]:
         is_remote = bool(item.get("is_work_from_home") or item.get("is_hybrid"))
         work_type = item.get("tenure")
 
-        posted_at = item.get("created_at") or item.get("activation_date")
+        posted_at = item.get("activation_date") or item.get("published_at") or item.get("created_at")
         desc = (item.get("description") or item.get("summary") or item.get("qualification") or "").strip()
         min_exp = item.get("minimum_experience")
         if min_exp is not None:
