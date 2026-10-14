@@ -145,6 +145,36 @@ class JobhuntRequestHandler(http.server.BaseHTTPRequestHandler):
             if path == "/api/source-health":
                 self._send_json({"sources": self.features.source_health()})
                 return
+            if path == "/api/run-batches":
+                limit = self._integer(query.get("limit", ["20"])[0], "limit", 1, 50)
+                self._send_json({"runs": self.features.list_batches(limit=limit)})
+                return
+            if path.startswith("/api/run/") and path.endswith("/events"):
+                run_id = self._integer(path.split("/")[3], "run ID", 1)
+                if not self.features.get_batch(run_id):
+                    self._send_json({"error": "Run not found"}, 404)
+                    return
+                after = self._integer(query.get("after", ["0"])[0], "cursor", 0, 2147483647)
+                limit = self._integer(query.get("limit", ["100"])[0], "limit", 1, 200)
+                events = self.features.get_run_events(run_id, after=after, limit=limit)
+                self._send_json({"events": events, "next_cursor": events[-1]["id"] if events else after})
+                return
+            if path.startswith("/api/run/") and path.endswith("/preview"):
+                run_id = self._integer(path.split("/")[3], "run ID", 1)
+                if not self.features.get_batch(run_id):
+                    self._send_json({"error": "Run not found"}, 404)
+                    return
+                limit = self._integer(query.get("limit", ["60"])[0], "limit", 1, 100)
+                offset = self._integer(query.get("offset", ["0"])[0], "offset", 0, 100000)
+                source = query.get("source", [None])[0]
+                if source not in (None, "all") and source not in DEFAULT_SOURCES:
+                    raise ValueError("Invalid source")
+                search_text = query.get("q", [None])[0]
+                if search_text is not None and len(search_text) > 120:
+                    raise ValueError("Search query too long")
+                self._send_json(self.features.get_run_preview(
+                    run_id, limit=limit, offset=offset, source=source, query_text=search_text))
+                return
             if path == "/api/run/latest":
                 batch = self.features.latest_batch()
                 self._send_json({"run": batch})
@@ -337,11 +367,14 @@ def execute_batch(db, features, gate, run_id, keyword=None, area="all", sources=
     task_outcomes = []
     try:
         features.update_batch(run_id, status="running", started_at=utc_now())
+        features.add_run_event(run_id, "system", "info", "run_started",
+                               "Manual collection started; verified publication within 14 days required")
         def progress(result, done, total):
             stats["total_tasks"] = total
             stats["processed_tasks"] = done
             if result:
                 task_outcomes.append(result["status"])
+                features.record_batch_result(run_id, result)
                 stats["jobs_found"] += result["found_count"]
                 stats["jobs_new"] += result["new_count"]
                 stats["jobs_recent"] += result.get("recent_count", 0)
@@ -368,10 +401,17 @@ def execute_batch(db, features, gate, run_id, keyword=None, area="all", sources=
             "partial"
         )
         features.update_batch(run_id, status=status, finished_at=utc_now())
+        features.add_run_event(run_id, "system",
+                               "success" if status == "completed" else "warning",
+                               "run_finished", "Run finished: " + status, stats)
     except Exception as exc:
         logger.exception("Collection run %s failed", run_id)
         features.update_batch(run_id, status="failed", error_message=str(exc)[:2000],
                               finished_at=utc_now())
+        try:
+            features.add_run_event(run_id, "system", "error", "run_failed", str(exc)[:500])
+        except Exception:
+            logger.exception("Could not persist failed run event")
     finally:
         gate.release()
 
