@@ -62,14 +62,11 @@ Open http://127.0.0.1:8000. The DB directory is created automatically. For hot r
 
 ## Manual collection: last 14 days
 
-**Kerjo never schedules scraping.** Click **Scrape sekarang** in the dashboard, or run:
-
-~~~powershell
-task scrape
-# or directly:
-$env:PYTHONPATH = "apps/api"
-python -m jobhunt run
-~~~
+**Kerjo never schedules scraping.** Buka aplikasi melalui
+**Start-Kerjo.cmd**, lalu klik **Scrape sekarang** di dashboard.
+Halaman **Scraping** menampilkan event hasil jaringan dan progress worker nyata;
+**Results Preview** hanya menampilkan lowongan yang benar-benar tersimpan di
+SQLite pada run tersebut. Tidak ada fake scraping atau hasil demo di produksi.
 
 A manual API/UI request starts a background **worker for that request only**, so the
 dashboard remains responsive. No timer, cron job, or Windows Task Scheduler is
