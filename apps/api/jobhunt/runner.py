@@ -3,7 +3,9 @@ import pathlib
 import logging
 import time
 import threading
-from concurrent.futures import ThreadPoolExecutor, as_completed
+import queue
+from dataclasses import replace
+from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, Callable, List, Any, Optional
 from jobhunt.db import Database
 from jobhunt.models import Job, SourceResult
@@ -176,37 +178,58 @@ class JobRunner:
             on_progress(None, 0, total)
         if not tasks:
             return []
-        # Identical keyword/provider requests share a single network result.
-        # Each saved search is still evaluated independently by area.
+
+        # Each provider gets its own sequential task lane: fast sites cannot
+        # be starved behind N queued keywords from a slow/rate-limited site.
         grouped = {}
+        provider_lanes = {}
         for index, task in enumerate(tasks):
             _, keyword, _, source = task
-            grouped.setdefault((source, keyword.strip().casefold()), []).append(index)
+            key = (source, keyword.strip().casefold())
+            if key not in grouped:
+                grouped[key] = []
+                provider_lanes.setdefault(source, []).append(key)
+            grouped[key].append(index)
+
+        completed_queue = queue.Queue()
         ordered = [None] * total
         completed = 0
-        with ThreadPoolExecutor(max_workers=min(self.max_workers, len(grouped)),
-                                thread_name_prefix="kerjo-provider") as pool:
-            pending = {
-                pool.submit(self._fetch_source, source, tasks[indexes[0]][1]): indexes
-                for (source, _), indexes in grouped.items()
-            }
-            for future in as_completed(pending):
-                indexes = pending[future]
+
+        def provider_lane(source, keys):
+            for key in keys:
+                keyword = tasks[grouped[key][0]][1]
                 try:
-                    fetched = future.result()
+                    fetched = self._fetch_source(source, keyword)
                 except Exception as exc:
-                    source = tasks[indexes[0]][3]
                     fetched = SourceResult(source=source, success=False,
                                            jobs=[], error_message=str(exc))
-                for index in indexes:
+                completed_queue.put((key, fetched))
+
+        with ThreadPoolExecutor(max_workers=min(self.max_workers, len(provider_lanes)),
+                                thread_name_prefix="kerjo-provider") as pool:
+            futures = [pool.submit(provider_lane, source, keys)
+                       for source, keys in provider_lanes.items()]
+            for _ in range(len(grouped)):
+                key, fetched = completed_queue.get()
+                indexes = grouped[key]
+                for group_index, index in enumerate(indexes):
                     search_id, keyword, area_filter, source = tasks[index]
+                    # Metrics count real network work only once when several
+                    # saved searches share this provider/keyword request.
+                    measured = fetched if group_index == 0 else replace(
+                        fetched, pages_fetched=0, retry_count=0,
+                        enriched_count=0, elapsed_ms=0)
                     result = self._execute_search_on_source(
                         search_id, keyword, area_filter, source,
-                        self.sources[source], prefetched=fetched)
+                        self.sources[source], prefetched=measured)
                     ordered[index] = result
                     completed += 1
                     if on_progress:
                         on_progress(result, completed, total)
+            # Preserve the exceptions of the lane itself rather than silently
+            # claiming success if a provider worker unexpectedly terminated.
+            for future in futures:
+                future.result()
         return ordered
 
     def _execute_search_on_source(
