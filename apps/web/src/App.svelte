@@ -190,9 +190,6 @@
 
   function selectJob(job) {
     activeJob = job;
-    if (job && job.is_new) {
-      markJobSeen(job);
-    }
   }
 
   function filterByCompany(compName) {
