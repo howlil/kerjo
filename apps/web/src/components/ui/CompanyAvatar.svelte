@@ -2,6 +2,7 @@
   let { company = '', logo = null, size = 32 } = $props();
   let failed = $state(false);
   const letter = $derived((company.replace(/^PT\.?\s+/i, '').trim() || 'J').charAt(0).toUpperCase());
+  $effect(() => { logo; failed = false; });
 </script>
 <span class="company-avatar" style:width={size + 'px'} style:height={size + 'px'}>
   {#if logo && !failed}
