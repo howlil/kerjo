@@ -357,7 +357,7 @@ def extract_experience(text: str) -> Dict[str, Any]:
 
     # 4. Greater than / Minimal N years e.g. "> 5 years", "lebih dari 3 tahun", "min 5 tahun", "5+ years", "at least 3 years"
     gt_match = re.search(
-        r"(?:>|lebih dari|above|over|minimal|min|at least|sekurang-kurangnya)\s*(\d+)\s*(?:\+|\s*(?:tahun|thn|th|years?|yrs|yoe))\b",
+        r"(?:>|lebih dari|above|over|minimum|minimal|min|at least|sekurang-kurangnya)\s*(\d+)\s*(?:\+|\s*(?:tahun|thn|th|years?|yrs|yoe))\b",
         t_lower,
     )
     if not gt_match:
