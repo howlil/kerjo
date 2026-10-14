@@ -3,7 +3,7 @@
   import Timeline from '../Timeline.svelte';
   import CompanyAvatar from '../ui/CompanyAvatar.svelte';
   import Button from '../ui/Button.svelte';
-  let { job = null, saved = false, onClose, onCompany, onSeen, onSave, onApply, formatRole, formatArea } = $props();
+  let { job = null, saved = false, onClose, onCompany, onSeen, onSave, onApply, onDelete = () => {}, deletingDisabled = false, formatRole, formatArea } = $props();
   let editing = $state(false);
   let lastJobId = $state(null);
   let draftStatus = $state('not_applied');
@@ -30,6 +30,7 @@
   <span class="ui-eyebrow">POSITION DETAILS</span>
   <div style="display:flex;gap:3px;align-items:center">
     {#if job}
+      <button type="button" class="inspector-delete-button" disabled={deletingDisabled} onclick={() => onDelete(job)} title="Hapus hasil scraping dari database">Hapus</button>
       <button type="button" class="ui-icon-button" class:is-active={saved} onclick={() => onSave(job)} aria-label={saved ? 'Hapus simpanan lokal' : 'Simpan posisi'} title="Simpan posisi">
         <Icon name="bookmark" size={15}/>
       </button>
@@ -136,6 +137,8 @@
 {/if}
 
 <style>
+.inspector-delete-button{font-size:11px;color:var(--color-text-secondary);background:transparent;border:0;padding:4px 6px;cursor:pointer}
+.inspector-delete-button:hover{color:var(--color-text-heading)}
 .inspector-application-form{display:grid;gap:10px;margin-top:12px}
 .inspector-application-form label{display:grid;gap:5px;font-size:11px;color:var(--color-text-secondary)}
 .inspector-application-form .ui-input{padding:8px;font-size:12px;color:var(--color-text-heading);background:var(--color-surface)}
