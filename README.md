@@ -88,6 +88,7 @@ counts, including partial errors.
 | `KERJO_MAX_WORKERS` | 3 | 1–4 | Parallel provider workers; never parallel on one provider |
 | `KERJO_REQUEST_GAP_SECONDS` | 0.4 | 0–3 | Inter-page polite delay |
 | `KERJO_DETAIL_ENRICH_LIMIT` | 3 | 0–10 | Detail-page requests per provider / keyword; 0 disables |
+| `KERJO_RUN_DETAIL_BUDGET` | 8 | 0–16 | Maximum total detail-page requests per provider per manual run |
 
 The LinkedIn adapter additionally asks for a 14-day server-side filter.
 Local publication-date checking is authoritative. The window rolls forward
