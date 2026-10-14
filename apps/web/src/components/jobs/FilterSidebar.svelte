@@ -50,18 +50,18 @@
     <label class="filter-checkbox"><input type="checkbox" checked={onlyNew} onchange={(e)=>onFilter('new',e.currentTarget.checked)}/> Hanya lowongan baru</label>
   </section>
   <section class="panel-section">
-    <div class="filter-section-heading"><h3 style="margin-bottom:0">AUTO-SEARCH ({searches.length})</h3><button type="button" class="ui-icon-button" onclick={onAddSearch} title="Tambah pencarian otomatis" aria-label="Tambah pencarian otomatis"><Icon name="plus" size={14}/></button></div>
+    <div class="filter-section-heading"><h3 style="margin-bottom:0">SAVED SEARCHES ({searches.length})</h3><button type="button" class="ui-icon-button" onclick={onAddSearch} title="Tambah saved search" aria-label="Tambah saved search"><Icon name="plus" size={14}/></button></div>
     {#if searches.length === 0}
-      <p class="filter-hint">Belum ada pencarian terjadwal.</p>
+      <p class="filter-hint">Belum ada saved search. Tambahkan untuk digunakan saat scraping manual.</p>
     {:else}
       {#each searches as search}
         <div class="filter-search" style:opacity={search.is_active ? 1 : .55}>
           <span class="state-dot" class:is-on={search.is_active}></span>
-          <button class="search-name" title={search.is_active ? 'Jeda pencarian' : 'Aktifkan pencarian'} onclick={() => onToggleSearch(search.id)}>{search.keyword}</button>
+          <button class="search-name" title={search.is_active ? 'Keluarkan dari manual scrape' : 'Sertakan saat manual scrape'} onclick={() => onToggleSearch(search.id)}>{search.keyword}</button>
           <button title="Hapus pencarian" aria-label={'Hapus '+search.keyword} onclick={() => onDeleteSearch(search.id)}><Icon name="trash" size={13}/></button>
         </div>
       {/each}
     {/if}
   </section>
 </div>
-<div class="filter-footer"><span class="status-dot"></span> SAVED SEARCHES · JADWAL BELUM DIVERIFIKASI</div>
+<div class="filter-footer"><span class="status-dot"></span> MANUAL ONLY · LAST 14 DAYS</div>
