@@ -53,6 +53,17 @@
   let showSavedOnly = $state(false);
 
   let jobsError = $state('');
+  // Management controls are UI-only; all mutations go through SQLite-backed API.
+  let managingResults = $state(false);
+  let selectedRawIds = $state([]);
+  let showDeleteDialog = $state(false);
+  let deleteScope = $state('selected');
+  let includeTracked = $state(false);
+  let deleteAcknowledgement = $state('');
+  let deletingResults = $state(false);
+  let deleteError = $state('');
+  let jobInventory = $state({total:0,protected:0,deletable:0});
+  let lastObservedProcessed = 0;
   let searchTimer;
   let latestRequest = 0;
   let visibleJobs = $derived(jobs);
@@ -142,6 +153,98 @@
   function jsonOptions(method,payload) {
     return {method,headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)};
   }
+  async function loadAtsBoards() {
+    atsBoards = (await api('/api/ats-boards')).boards || [];
+  }
+  async function addAtsBoard(event) {
+    event.preventDefault();
+    if (savingAtsBoard) return;
+    savingAtsBoard = true;
+    try {
+      await api('/api/ats-boards', jsonOptions('POST', {
+        provider: newAtsProvider, slug: newAtsSlug.trim()
+      }));
+      newAtsSlug = '';
+      await loadAtsBoards();
+      notice = 'Company board disimpan. Aktifkan sumber Company ATS dalam saved search, lalu klik Scrape sekarang.';
+    } catch (error) {
+      notice = 'Gagal menyimpan company board: ' + error.message;
+    } finally {
+      savingAtsBoard = false;
+    }
+  }
+  async function removeAtsBoard(board) {
+    if (!confirm('Hapus sumber ' + board.provider + ':' + board.slug + '? Lowongan yang sudah tersimpan tidak dihapus.')) return;
+    try {
+      await api('/api/ats-boards/' + board.id, {method:'DELETE'});
+      await loadAtsBoards();
+      notice = 'Sumber dihapus. Hasil scraping lama tetap tersimpan.';
+    } catch (error) {
+      notice = 'Gagal menghapus sumber: ' + error.message;
+    }
+  }
+
+  async function loadInventory() {
+    jobInventory = await api('/api/jobs/inventory');
+  }
+  const jobRowIds = (job) => job.ids?.length ? job.ids : [job.id];
+  function isJobSelected(job) {
+    return jobRowIds(job).every(id => selectedRawIds.includes(id));
+  }
+  function toggleSelectedJob(job) {
+    const ids = jobRowIds(job);
+    selectedRawIds = isJobSelected(job)
+      ? selectedRawIds.filter(id => !ids.includes(id))
+      : [...new Set([...selectedRawIds, ...ids])];
+  }
+  function togglePageSelection() {
+    const ids = [...new Set(jobs.flatMap(jobRowIds))];
+    selectedRawIds = ids.every(id => selectedRawIds.includes(id))
+      ? selectedRawIds.filter(id => !ids.includes(id))
+      : [...new Set([...selectedRawIds, ...ids])];
+  }
+  function toggleManageResults() {
+    managingResults = !managingResults;
+    selectedRawIds = [];
+  }
+  async function openDeleteDialog(scope) {
+    if (runningScraper || deletingResults || (scope === 'selected' && !selectedRawIds.length)) return;
+    deleteScope = scope;
+    includeTracked = false;
+    deleteAcknowledgement = '';
+    deleteError = '';
+    try {
+      await loadInventory();
+      showDeleteDialog = true;
+    } catch (error) {
+      notice = 'Gagal membaca jumlah data tersimpan: ' + error.message;
+    }
+  }
+  async function confirmDelete() {
+    if (deletingResults || runningScraper || deleteAcknowledgement !== 'HAPUS') return;
+    deletingResults = true;
+    deleteError = '';
+    try {
+      const payload = {
+        confirm:'DELETE', include_tracked: includeTracked,
+        ...(deleteScope === 'all' ? {scope:'all'} : {ids:selectedRawIds})
+      };
+      const response = await api('/api/jobs', jsonOptions('DELETE', payload));
+      notice = response.deleted + ' lowongan dihapus permanen dari SQLite.' +
+        (response.protected_skipped ? ' ' + response.protected_skipped + ' disimpan/dilamar tetap aman.' : '');
+      showDeleteDialog = false;
+      selectedRawIds = [];
+      managingResults = false;
+      activeJob = null;
+      currentPage = 0;
+      await Promise.all([loadJobs(),loadCompanies(),loadApplications(),loadInventory()]);
+    } catch (error) {
+      deleteError = error.message;
+    } finally {
+      deletingResults = false;
+    }
+  }
+
   async function loadJobs() {
     const requestId = ++latestRequest;
     loading = true;
@@ -547,6 +650,8 @@
     } catch {}
     loadJobs();
     loadCompanies();
+    loadInventory();
+    loadAtsBoards();
     loadSearches();
     loadRuns();
     loadRunHistory();
@@ -588,11 +693,12 @@
       </button>
       {#if currentView==='discovery'}
       <span class="desktop-action"><Button onclick={markAllSeen}><Icon name="checkCircle" size={14}/>Tandai dilihat</Button></span>
+      <Button onclick={() => showAtsBoards = true}>Sumber ATS</Button>
       <Button onclick={() => showRecruiterImport = true}>Impor post HR</Button>
       <Button onclick={() => showAddSearch = true}><Icon name="plus" size={14}/><span class="desktop-action">Tambah pencarian</span></Button>
       {/if}
       {#if currentView==='discovery'}
-        <Button variant="primary" disabled={runningScraper} onclick={triggerRun}><Icon name="refresh" size={14}/><span>{runningScraper ? 'Scraping…' : 'Scrape manual'}</span></Button>
+        <Button variant="primary" disabled={runningScraper || deletingResults} onclick={triggerRun}><Icon name="refresh" size={14}/><span>{runningScraper ? 'Scraping berjalan…' : 'Scrape sekarang'}</span></Button>
       {/if}
     </div>
   {/snippet}
@@ -634,10 +740,29 @@
         <button class="ui-icon-button" onclick={() => { searchQuery = ''; loadJobs(); }} aria-label="Kosongkan pencarian"><Icon name="x" size={14}/></button>
       {/if}
     </div>
+    {#if currentRun}
+      <section class="scrape-status" aria-label="Status scraping nyata" aria-live="polite">
+        <div class="scrape-status-heading">
+          <strong>Manual scrape #{currentRun.id}</strong>
+          <span>{currentRun.status === 'completed' ? 'Selesai' : currentRun.status === 'partial' ? 'Sebagian gagal' : currentRun.status === 'failed' ? 'Gagal' : currentRun.status === 'skipped' ? 'Tidak dijalankan' : currentRun.status === 'running' ? 'Mengambil lowongan…' : 'Dalam antrean'}</span>
+        </div>
+        <progress max={Math.max(1, currentRun.total_tasks || 1)} value={currentRun.processed_tasks || 0} aria-label="Progress penyelesaian sumber"></progress>
+        <div class="scrape-status-facts">
+          <span>{currentRun.processed_tasks || 0}/{currentRun.total_tasks || 0} tugas</span>
+          <span>{currentRun.jobs_found || 0} ditemukan</span>
+          <strong>{currentRun.jobs_new || 0} baru disimpan</strong>
+          <span>{currentRun.pages_fetched || 0} halaman</span>
+          {#if currentRun.errors}<span>{currentRun.errors} error</span>{/if}
+        </div>
+        {#if currentRun.error_message}<p class="scrape-status-error">{currentRun.error_message}</p>{/if}
+        {#if currentRun.status === 'skipped'}<p class="scrape-status-error">Aktifkan saved search untuk menjalankan scraper.</p>{/if}
+      </section>
+    {/if}
     <div class="results-toolbar">
       <strong>{showSavedOnly ? 'Saved positions' : selectedRole === 'all' ? 'All positions' : roleCategories.find(r => r.id === selectedRole)?.label}</strong>
       <span class="results-count">{loading ? 'Memuat…' : jobsTotal ? (currentPage * PAGE_SIZE + 1) + '–' + (currentPage * PAGE_SIZE + visibleJobs.length) + ' dari ' + jobsTotal : '0 lowongan'}</span>
       <div class="results-actions">
+        <button type="button" class="results-manage" aria-pressed={managingResults} disabled={runningScraper || deletingResults} onclick={toggleManageResults}>{managingResults ? 'Selesai kelola' : 'Kelola hasil'}</button>
         <label for="results-sort" class="results-sort-label">Sort</label>
         <select id="results-sort" class="ui-input results-sort" bind:value={sortMode} onchange={()=>{currentPage=0;loadJobs();}}>
           <option value="recent">Recent</option>
@@ -650,6 +775,16 @@
         </div>
       </div>
     </div>
+    {#if managingResults}
+      <div class="results-bulk">
+        <button type="button" onclick={togglePageSelection} disabled={!jobs.length || deletingResults}>Pilih halaman</button>
+        <span>{selectedRawIds.length} data sumber dipilih</span>
+        <div class="results-bulk-actions">
+          <button type="button" disabled={!selectedRawIds.length || deletingResults} onclick={() => openDeleteDialog('selected')}>Hapus pilihan</button>
+          <button type="button" disabled={deletingResults} onclick={() => openDeleteDialog('all')}>Kosongkan hasil scraping</button>
+        </div>
+      </div>
+    {/if}
     <div class="results-content">
       {#if jobsError}
         <div class="ui-empty" role="alert"><strong>Gagal memuat lowongan</strong>{jobsError}<div style="margin-top:12px"><Button onclick={loadJobs}>Coba lagi</Button></div></div>
@@ -664,6 +799,9 @@
               saved={Boolean(job.is_saved)}
               onSelect={chooseJob}
               onSave={toggleSaved}
+              selecting={managingResults}
+              checked={isJobSelected(job)}
+              onToggleSelect={toggleSelectedJob}
               {formatRole}
               {formatArea}
               {formatTime}
@@ -690,6 +828,12 @@
       onSeen={markJobSeen}
       onSave={toggleSaved}
       onApply={updateApplication}
+      onDelete={(job) => {
+        const ids = jobRowIds(job);
+        selectedRawIds = [...ids];
+        openDeleteDialog('selected');
+      }}
+      deletingDisabled={runningScraper || deletingResults}
       {formatRole}
       {formatArea}
     />
@@ -720,6 +864,77 @@
   <div class="app-notice" role="status">
     <span>{notice}</span>
     <button type="button" onclick={()=>notice=''} aria-label="Tutup notifikasi"><Icon name="x" size={14}/></button>
+  </div>
+{/if}
+
+{#if showAtsBoards}
+  <div class="ui-modal-backdrop" role="presentation">
+    <section class="ui-modal" role="dialog" aria-modal="true" aria-labelledby="ats-board-title">
+      <div class="ui-modal-header"><h2 id="ats-board-title">Sumber perusahaan (ATS)</h2>
+        <button type="button" class="ui-icon-button" onclick={() => showAtsBoards = false} aria-label="Tutup"><Icon name="x" size={16}/></button></div>
+      <p class="delete-explanation">Hubungkan board lowongan publik milik perusahaan. Tidak perlu CLI atau API key untuk Greenhouse, Lever, atau Ashby.</p>
+      {#if atsBoards.length}
+        <div class="ats-board-list">
+          {#each atsBoards as board (board.id)}
+            <div class="ats-board-entry">
+              <div><strong>{board.slug}</strong><span>{board.provider}</span></div>
+              <button type="button" onclick={() => removeAtsBoard(board)} aria-label={'Hapus '+board.slug}>Hapus</button>
+            </div>
+          {/each}
+        </div>
+      {:else}
+        <p class="ats-board-empty">Belum ada company board yang disimpan.</p>
+      {/if}
+      <form onsubmit={addAtsBoard}>
+        <div class="ui-modal-field"><label for="ats-provider">Platform ATS</label>
+          <select id="ats-provider" class="ui-input" bind:value={newAtsProvider}>
+            <option value="ashby">Ashby</option>
+            <option value="greenhouse">Greenhouse</option>
+            <option value="lever">Lever</option>
+          </select></div>
+        <div class="ui-modal-field"><label for="ats-slug">Company board slug</label>
+          <input id="ats-slug" class="ui-input" required minlength="2" maxlength="90" pattern="[A-Za-z0-9_-]+" placeholder="Contoh: nama-perusahaan" bind:value={newAtsSlug}/>
+        </div>
+        <p class="ats-board-empty">Gunakan slug dari URL board publik perusahaan, bukan keyword pekerjaan.</p>
+        <div class="ui-modal-actions">
+          <Button onclick={() => showAtsBoards = false}>Tutup</Button>
+          <Button type="submit" variant="primary" disabled={savingAtsBoard}>{savingAtsBoard ? 'Menyimpan…' : 'Tambah sumber'}</Button>
+        </div>
+      </form>
+    </section>
+  </div>
+{/if}
+
+{#if showDeleteDialog}
+  <div class="ui-modal-backdrop" role="presentation">
+    <section class="ui-modal" role="dialog" aria-modal="true" aria-labelledby="delete-results-title">
+      <div class="ui-modal-header"><h2 id="delete-results-title">Hapus hasil scraping</h2>
+        <button type="button" class="ui-icon-button" disabled={deletingResults} onclick={() => showDeleteDialog = false} aria-label="Tutup"><Icon name="x" size={16}/></button>
+      </div>
+      <p class="delete-explanation">
+        {deleteScope === 'all'
+          ? 'Bersihkan semua hasil scraping di database, termasuk posting lama yang tidak muncul pada filter saat ini.'
+          : 'Hapus ' + selectedRawIds.length + ' data sumber yang dipilih dari database.'}
+        Tindakan ini permanen, bukan sekadar menyembunyikan card.
+      </p>
+      {#if deleteScope === 'all'}
+        <p class="delete-inventory">{jobInventory.total} tersimpan · {jobInventory.deletable} bisa dihapus · {jobInventory.protected} dilindungi</p>
+      {/if}
+      <label class="delete-include"><input type="checkbox" bind:checked={includeTracked}/>
+        Sertakan lowongan saved atau yang memiliki histori lamaran
+      </label>
+      {#if includeTracked}<p class="delete-warning">Saved jobs, catatan dan status lamaran untuk lowongan tersebut juga akan terhapus permanen.</p>{/if}
+      <div class="ui-modal-field">
+        <label for="delete-ack">Ketik HAPUS untuk konfirmasi</label>
+        <input id="delete-ack" class="ui-input" placeholder="HAPUS" autocomplete="off" bind:value={deleteAcknowledgement}/>
+      </div>
+      {#if deleteError}<p class="delete-warning" role="alert">{deleteError}</p>{/if}
+      <div class="ui-modal-actions">
+        <Button onclick={() => showDeleteDialog = false} disabled={deletingResults}>Batal</Button>
+        <Button variant="primary" disabled={deleteAcknowledgement !== 'HAPUS' || deletingResults || runningScraper}
+          onclick={confirmDelete}>{deletingResults ? 'Menghapus…' : 'Hapus permanen'}</Button>
+      </div>
+    </section>
   </div>
 {/if}
 
@@ -778,6 +993,30 @@
 {/if}
 
 <style>
+.ats-board-list{margin-bottom:16px}
+.ats-board-entry{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:9px 0;border-bottom:var(--workspace-rule);font-size:12px}
+.ats-board-entry div{display:flex;flex-direction:column;gap:3px}
+.ats-board-entry strong{color:var(--color-text-heading)}
+.ats-board-entry span,.ats-board-empty{color:var(--color-text-secondary);font-size:11px;line-height:1.5;margin-bottom:10px}
+.ats-board-entry button{background:transparent;color:var(--color-text-secondary);font-size:11px;cursor:pointer}
+.scrape-status{padding:9px var(--space-4);border-bottom:var(--workspace-rule);background:var(--color-surface-muted);font-size:11px;color:var(--color-text-secondary)}
+.scrape-status-heading{display:flex;justify-content:space-between;gap:10px;align-items:center;margin-bottom:6px}
+.scrape-status-heading strong{font-size:12px;color:var(--color-text-heading)}
+.scrape-status progress{height:4px;width:100%;display:block;accent-color:var(--color-accent)}
+.scrape-status-facts{display:flex;gap:12px;flex-wrap:wrap;margin-top:6px}
+.scrape-status-facts strong{color:var(--color-text-heading)}
+.scrape-status-error{margin-top:5px;color:var(--color-text-secondary)}
+.results-manage,.results-bulk button{background:transparent;color:var(--color-text-secondary);font-size:11px;white-space:nowrap;cursor:pointer}
+.results-manage:hover,.results-bulk button:hover{color:var(--color-text-heading)}
+.results-bulk{display:flex;align-items:center;gap:14px;border-bottom:var(--workspace-rule);padding:10px var(--space-4);font-size:11px;color:var(--color-text-secondary)}
+.results-bulk-actions{display:flex;gap:15px;margin-left:auto}
+.results-bulk-actions button{color:var(--color-text-heading)}
+.delete-explanation{font-size:12px;line-height:1.6;color:var(--color-text-secondary);margin-bottom:12px}
+.delete-inventory{font-size:12px;font-weight:600;margin-bottom:14px;color:var(--color-text-heading)}
+.delete-include{display:flex;align-items:flex-start;gap:9px;font-size:12px;line-height:1.5;margin:12px 0;cursor:pointer;color:var(--color-text-secondary)}
+.delete-include input{margin-top:3px;accent-color:var(--color-accent)}
+.delete-warning{font-size:12px;line-height:1.55;margin:10px 0;color:var(--color-text-heading)}
+@media(max-width:700px){.scrape-status-facts{gap:7px}.results-bulk{gap:8px;flex-wrap:wrap}.results-bulk-actions{width:100%;justify-content:flex-end}}
 .recruiter-help{font-size:12px;line-height:1.5;color:var(--color-text-secondary);margin:12px 0}
 .app-view-tabs{display:flex;align-items:center;gap:3px;margin-left:auto;flex-shrink:0}
 .app-view-tabs button{padding:6px 9px;border-radius:var(--radius-md);color:var(--color-text-secondary);font-size:11px;font-weight:650;cursor:pointer;white-space:nowrap}
