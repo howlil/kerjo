@@ -35,7 +35,7 @@ At most one active manual batch; at most one active collection per provider; max
 
 ## Trust boundaries and resource scope
 
-Public HTTPS detail host must match the source's exact allowlist. No userinfo, custom ports, redirects, or unrestricted arbitrary URLs. Maximum response 300 KiB, timeout six seconds, max ten details per search (default three). No credential/session automation, proxy rotation, captcha evasion, external cloud queue, Scrapy rewrite, or recurring schedule. Respect provider access/rate limitations.
+Public HTTPS detail host must match the source's exact allowlist. No userinfo, custom ports, redirects, or unrestricted arbitrary URLs. Maximum response 300 KiB, timeout six seconds, max ten details per search (default three), capped at eight details per provider per run (hard maximum sixteen). No credential/session automation, proxy rotation, captcha evasion, external cloud queue, Scrapy rewrite, or recurring schedule. Respect provider access/rate limitations.
 
 ## Invariants / verification
 
