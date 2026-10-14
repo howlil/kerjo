@@ -1,7 +1,11 @@
 <script>
   import { onMount } from 'svelte';
   import Icon from './components/Icon.svelte';
-  import Timeline from './components/Timeline.svelte';
+  import Button from './components/ui/Button.svelte';
+  import WorkspaceShell from './components/layout/WorkspaceShell.svelte';
+  import FilterSidebar from './components/jobs/FilterSidebar.svelte';
+  import JobCard from './components/jobs/JobCard.svelte';
+  import JobInspector from './components/jobs/JobInspector.svelte';
 
   // Core State
   let jobs = $state([]);
@@ -11,6 +15,27 @@
   let loading = $state(false);
   let runningScraper = $state(false);
   let activeJob = $state(null);
+
+  // UI state is kept separate from the existing server-side API filters.
+  let displayMode = $state('grid');
+  let theme = $state('light');
+  let mobileFilterOpen = $state(false);
+  let mobileDetailOpen = $state(false);
+  let showSavedOnly = $state(false);
+  let savedIds = $state([]);
+  let jobsError = $state('');
+  let searchTimer;
+  let latestRequest = 0;
+  let visibleJobs = $derived.by(() => {
+    const filtered = showSavedOnly ? jobs.filter(job => savedIds.includes(job.id)) : [...jobs];
+    if (displayMode === 'list') return filtered;
+    return filtered;
+  });
+
+  const sourceLabels = [
+    ['jobstreet','JobStreet'],['kalibrr','Kalibrr'],['linkedin','LinkedIn'],
+    ['glints','Glints'],['dealls','Dealls'],['karir','Karir.com'],['techinasia','Tech in Asia']
+  ];
 
   // Filters State
   let selectedArea = $state('all');
@@ -78,7 +103,9 @@
   ];
 
   async function loadJobs() {
+    const requestId = ++latestRequest;
     loading = true;
+    jobsError = '';
     try {
       const params = new URLSearchParams();
       if (selectedArea !== 'all') params.set('area', selectedArea);
@@ -91,8 +118,11 @@
       params.set('limit', '300');
 
       const res = await fetch(`/api/jobs?${params.toString()}`);
+      if (!res.ok) throw new Error('Gagal mengambil lowongan: HTTP ' + res.status);
       const data = await res.json();
+      if (requestId !== latestRequest) return;
       jobs = data.jobs || [];
+      if (!activeJob && jobs.length) activeJob = jobs[0];
 
       // Update activeJob reference if still in list
       if (activeJob) {
@@ -100,9 +130,12 @@
         if (found) activeJob = found;
       }
     } catch (e) {
-      console.error('Error loading jobs:', e);
+      if (requestId === latestRequest) {
+        jobsError = e?.message || 'Tidak dapat memuat lowongan.';
+        console.error('Error loading jobs:', e);
+      }
     } finally {
-      loading = false;
+      if (requestId === latestRequest) loading = false;
     }
   }
 
@@ -276,764 +309,190 @@
     loadJobs();
   }
 
+  function changeFilter(type, value) {
+    switch (type) {
+      case 'role': selectedRole = value; break;
+      case 'experience': selectedExperience = value; break;
+      case 'company': selectedCompany = value; break;
+      case 'area': selectedArea = value; break;
+      case 'source': selectedSource = value; break;
+      case 'new': onlyNew = value; break;
+      default: return;
+    }
+    loadJobs();
+  }
+
+  function scheduleLoadJobs() {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(loadJobs, 280);
+  }
+
+  function toggleSaved(job) {
+    savedIds = savedIds.includes(job.id) ? savedIds.filter(id => id !== job.id) : [...savedIds, job.id];
+    try { localStorage.setItem('kerjo:saved-job-ids', JSON.stringify(savedIds)); } catch {}
+  }
+
+  function toggleTheme() {
+    theme = theme === 'dark' ? 'light' : 'dark';
+    document.documentElement.dataset.theme = theme;
+    try { localStorage.setItem('kerjo:theme', theme); } catch {}
+  }
+
+  function chooseJob(job) {
+    selectJob(job);
+    mobileFilterOpen = false;
+    mobileDetailOpen = true;
+  }
+
   onMount(() => {
+    try {
+      const storedIds = JSON.parse(localStorage.getItem('kerjo:saved-job-ids') || '[]');
+      if (Array.isArray(storedIds)) savedIds = storedIds;
+      theme = localStorage.getItem('kerjo:theme') === 'dark' ? 'dark' : 'light';
+      document.documentElement.dataset.theme = theme;
+    } catch {}
     loadJobs();
     loadCompanies();
     loadSearches();
     loadRuns();
+    return () => clearTimeout(searchTimer);
   });
 </script>
 
-<div class="min-h-screen bg-[var(--color-page)] flex flex-col text-[var(--color-text-body)]">
-  <!-- Top Navbar (Strict Monochrome) -->
-  <header class="sticky top-0 z-40 bg-[var(--color-page)]/95 backdrop-blur-md border-b border-[var(--color-border-subtle)] px-4 sm:px-6 py-2.5">
-    <div class="max-w-[1880px] mx-auto flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-      <!-- Brand & Status -->
-      <div class="flex items-center gap-3">
-        <a href="/" class="flex items-center gap-2 group text-decoration-none">
-          <span class="w-7 h-7 rounded-full bg-black text-white flex items-center justify-center font-bold text-xs shadow-xs transition group-hover:scale-105">
-            <Icon name="briefcase" size={14} />
-          </span>
-          <span class="text-lg font-bold tracking-tight text-black">
-            kerjo
-          </span>
-        </a>
-
-        <div class="h-4 w-[1px] bg-neutral-300 hidden sm:block"></div>
-
-        <div class="hidden sm:flex items-center gap-2">
-          <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-mono border border-neutral-300 bg-neutral-100 text-black">
-            <span class="w-1.5 h-1.5 rounded-full bg-black"></span>
-            Cronjob Tiap Jam Aktif
-          </span>
-          <span class="text-xs text-neutral-500 font-mono hidden xl:inline">
-            Jabodetabek & BSD / Alsut
-          </span>
-        </div>
-      </div>
-
-      <!-- Action Controls -->
-      <div class="flex items-center gap-2">
-        <button
-          onclick={markAllSeen}
-          class="control-pill px-3 py-1.5 text-xs text-neutral-700 hover:text-black flex items-center gap-1.5 cursor-pointer"
-          title="Tandai semua lowongan sebagai sudah dilihat"
-        >
-          <Icon name="checkCircle" size={13} />
-          <span>Tandai Dilihat</span>
-        </button>
-
-        <button
-          onclick={() => (showAddSearch = true)}
-          class="control-pill px-3 py-1.5 text-xs text-neutral-700 hover:text-black flex items-center gap-1.5 cursor-pointer"
-        >
-          <Icon name="plus" size={13} />
-          <span>Simpan Posisi</span>
-        </button>
-
-        <button
-          onclick={triggerRun}
-          disabled={runningScraper}
-          class="control-pill control-pill-active px-3.5 py-1.5 text-xs font-medium flex items-center gap-1.5 cursor-pointer disabled:opacity-60"
-        >
-          {#if runningScraper}
-            <span class="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
-            <span>Scraping...</span>
-          {:else}
-            <Icon name="refresh" size={13} />
-            <span>Scrape Sekarang</span>
-          {/if}
-        </button>
-      </div>
+<WorkspaceShell filterOpen={mobileFilterOpen} detailOpen={mobileDetailOpen} onDismiss={() => { mobileFilterOpen = false; mobileDetailOpen = false; }}>
+  {#snippet header()}
+    <a class="app-brand" href="/" aria-label="Kerjo home">
+      <span class="app-brand-mark"><Icon name="briefcase" size={17}/></span>
+      <span class="app-brand-name">kerjo</span>
+    </a>
+    <span class="app-divider"></span>
+    <span class="app-context">JOB DISCOVERY / JAKARTA</span>
+    <div class="app-actions">
+      <span class="app-status">{searches.length} auto-search tersimpan</span>
+      <button class="ui-icon-button" type="button" onclick={toggleTheme} title={theme === 'dark' ? 'Light mode' : 'Dark mode'} aria-label="Ganti tema">
+        <Icon name={theme === 'dark' ? 'sun' : 'moon'} size={16}/>
+      </button>
+      <span class="desktop-action"><Button onclick={markAllSeen}><Icon name="checkCircle" size={14}/>Tandai dilihat</Button></span>
+      <Button onclick={() => showAddSearch = true}><Icon name="plus" size={14}/><span class="desktop-action">Tambah pencarian</span></Button>
+      <Button variant="primary" disabled={runningScraper} onclick={triggerRun}><Icon name="refresh" size={14}/><span>{runningScraper ? 'Scraping…' : 'Scrape sekarang'}</span></Button>
     </div>
-  </header>
+  {/snippet}
 
-  <!-- 3-Column Layout: Sidebar Filter : Main Component : Sidebar Detail -->
-  <!-- Composition: 1:5 default, 1:4:1 when card detail open -->
-  <div class="max-w-[1880px] w-full mx-auto px-3 sm:px-5 py-3 flex-1">
-    <div class="grid grid-cols-1 lg:grid-cols-6 gap-3.5 items-start">
+  {#snippet filters()}
+    <FilterSidebar
+      roles={roleCategories}
+      levels={experienceLevels}
+      {areas}
+      {platforms}
+      {companies}
+      {searches}
+      {selectedRole}
+      {selectedExperience}
+      {selectedArea}
+      {selectedSource}
+      {selectedCompany}
+      {onlyNew}
+      onFilter={changeFilter}
+      onReset={resetAllFilters}
+      onAddSearch={() => showAddSearch = true}
+      onToggleSearch={toggleSearch}
+      onDeleteSearch={deleteSearch}
+    />
+  {/snippet}
 
-      <!-- ========================================== -->
-      <!-- COLUMN 1: SIDEBAR FILTER (1 part)          -->
-      <!-- Sticky, No outer section padding           -->
-      <!-- ========================================== -->
-      <aside class="lg:col-span-1 sticky top-16 max-h-[calc(100vh-4.75rem)] overflow-y-auto space-y-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-3 shadow-xs">
-        <!-- Filter Header -->
-        <div class="flex items-center justify-between pb-2 border-b border-[var(--color-border-subtle)]">
-          <div class="flex items-center gap-1.5 text-xs font-bold text-black">
-            <Icon name="filter" size={13} />
-            <span>Filter</span>
-          </div>
-          {#if selectedRole !== 'all' || selectedExperience !== 'all' || selectedArea !== 'all' || selectedSource !== 'all' || selectedCompany !== 'all' || onlyNew || searchQuery}
-            <button
-              onclick={resetAllFilters}
-              class="text-[10px] text-neutral-500 hover:text-black cursor-pointer font-medium"
-            >
-              Reset Semua
-            </button>
-          {/if}
-        </div>
-
-        <!-- Section: Role Category (flush, no outer padding) -->
-        <div class="space-y-1">
-          <span class="block text-[10px] font-mono uppercase tracking-wider text-neutral-500">
-            Kategori Role
-          </span>
-          <div class="space-y-0.5">
-            {#each roleCategories as r}
-              <button
-                onclick={() => { selectedRole = r.id; loadJobs(); }}
-                class="w-full text-left px-2 py-1 rounded-md text-xs transition flex items-center justify-between cursor-pointer {selectedRole === r.id ? 'bg-black text-white font-semibold' : 'text-neutral-700 hover:bg-neutral-200/60'}"
-              >
-                <span>{r.label}</span>
-                {#if selectedRole === r.id}
-                  <Icon name="check" size={11} />
-                {/if}
-              </button>
-            {/each}
-          </div>
-        </div>
-
-        <!-- Section: Experience Level (flush) -->
-        <div class="space-y-1 pt-2.5 border-t border-[var(--color-border-subtle)]">
-          <span class="block text-[10px] font-mono uppercase tracking-wider text-neutral-500">
-            Pengalaman
-          </span>
-          <div class="space-y-0.5">
-            {#each experienceLevels as exp}
-              <button
-                onclick={() => { selectedExperience = exp.id; loadJobs(); }}
-                class="w-full text-left px-2 py-1 rounded-md text-xs transition flex items-center justify-between cursor-pointer {selectedExperience === exp.id ? 'bg-black text-white font-semibold' : 'text-neutral-700 hover:bg-neutral-200/60'}"
-              >
-                <span>{exp.label}</span>
-                {#if selectedExperience === exp.id}
-                  <Icon name="check" size={11} />
-                {/if}
-              </button>
-            {/each}
-          </div>
-        </div>
-
-        <!-- Section: Filter by Company Across Aggregators (flush) -->
-        <div class="space-y-1 pt-2.5 border-t border-[var(--color-border-subtle)]">
-          <div class="flex items-center justify-between">
-            <label for="filter-company-select" class="block text-[10px] font-mono uppercase tracking-wider text-neutral-500">
-              Perusahaan ({companies.length})
-            </label>
-            {#if selectedCompany !== 'all'}
-              <button
-                onclick={() => { selectedCompany = 'all'; loadJobs(); }}
-                class="text-[10px] text-neutral-500 hover:text-black cursor-pointer font-medium"
-              >
-                Reset
-              </button>
-            {/if}
-          </div>
-          <select
-            id="filter-company-select"
-            bind:value={selectedCompany}
-            onchange={loadJobs}
-            class="w-full text-xs px-2 py-1.5 rounded-lg bg-white border border-[var(--color-border)] text-black focus:outline-none focus:ring-1 focus:ring-black cursor-pointer"
-          >
-            <option value="all">Semua Perusahaan</option>
-            {#each companies as c}
-              <option value={c.company}>{c.company} ({c.job_count})</option>
-            {/each}
-          </select>
-        </div>
-
-        <!-- Section: Area (flush) -->
-        <div class="space-y-1 pt-2.5 border-t border-[var(--color-border-subtle)]">
-          <label for="filter-area-select" class="block text-[10px] font-mono uppercase tracking-wider text-neutral-500">
-            Area Lokasi
-          </label>
-          <select
-            id="filter-area-select"
-            bind:value={selectedArea}
-            onchange={loadJobs}
-            class="w-full text-xs px-2 py-1.5 rounded-lg bg-white border border-[var(--color-border)] text-black focus:outline-none focus:ring-1 focus:ring-black cursor-pointer"
-          >
-            {#each areas as a}
-              <option value={a.id}>{a.label}</option>
-            {/each}
-          </select>
-        </div>
-
-        <!-- Section: Platform Portal (flush) -->
-        <div class="space-y-1 pt-2.5 border-t border-[var(--color-border-subtle)]">
-          <label for="filter-source-select" class="block text-[10px] font-mono uppercase tracking-wider text-neutral-500">
-            Platform Portal
-          </label>
-          <select
-            id="filter-source-select"
-            bind:value={selectedSource}
-            onchange={loadJobs}
-            class="w-full text-xs px-2 py-1.5 rounded-lg bg-white border border-[var(--color-border)] text-black focus:outline-none focus:ring-1 focus:ring-black cursor-pointer"
-          >
-            {#each platforms as p}
-              <option value={p.id}>{p.label}</option>
-            {/each}
-          </select>
-        </div>
-
-        <!-- Section: Only NEW (flush) -->
-        <div class="pt-2.5 border-t border-[var(--color-border-subtle)]">
-          <button
-            onclick={() => { onlyNew = !onlyNew; loadJobs(); }}
-            class="w-full ui-chip justify-between {onlyNew ? 'ui-chip-active' : ''}"
-          >
-            <span class="flex items-center gap-1.5">
-              <span class="w-1.5 h-1.5 rounded-full {onlyNew ? 'bg-white' : 'bg-black'}"></span>
-              <span>Hanya Baru (NEW)</span>
-            </span>
-            {#if onlyNew}
-              <Icon name="check" size={11} />
-            {/if}
-          </button>
-        </div>
-
-        <!-- Section: Auto-Search Widget (flush) -->
-        <div class="pt-2.5 border-t border-[var(--color-border-subtle)] space-y-1.5">
-          <div class="flex items-center justify-between">
-            <span class="text-[10px] font-mono uppercase tracking-wider text-neutral-500">
-              Auto-Search ({searches.length})
-            </span>
-            <button
-              onclick={() => (showAddSearch = true)}
-              class="text-[11px] text-neutral-600 hover:text-black cursor-pointer p-0.5"
-              title="Tambah Posisi"
-            >
-              <Icon name="plus" size={12} />
-            </button>
-          </div>
-
-          {#if searches.length === 0}
-            <p class="text-[11px] text-neutral-500 leading-snug">
-              Belum ada posisi tersimpan untuk cronjob tiap jam.
-            </p>
-          {:else}
-            <div class="space-y-1 max-h-44 overflow-y-auto pr-0.5">
-              {#each searches as s}
-                <div class="flex items-center justify-between gap-1 text-xs px-2 py-1 rounded-md border border-[var(--color-border-subtle)] bg-white {s.is_active ? '' : 'opacity-40'}">
-                  <button
-                    onclick={() => toggleSearch(s.id)}
-                    class="flex items-center gap-1.5 truncate text-left cursor-pointer flex-1"
-                    title={s.is_active ? 'Status aktif. Klik untuk jeda' : 'Status dijeda. Klik untuk aktifkan'}
-                  >
-                    <span class="w-1.5 h-1.5 rounded-full shrink-0 {s.is_active ? 'bg-black' : 'bg-neutral-400'}"></span>
-                    <span class="font-medium text-black truncate text-[11px]">{s.keyword}</span>
-                  </button>
-                  <button
-                    onclick={() => deleteSearch(s.id)}
-                    class="text-neutral-400 hover:text-black cursor-pointer p-0.5 shrink-0"
-                    title="Hapus"
-                  >
-                    <Icon name="trash" size={11} />
-                  </button>
-                </div>
-              {/each}
-            </div>
-          {/if}
-        </div>
-      </aside>
-
-      <!-- ======================================================== -->
-      <!-- COLUMN 2: MAIN COMPONENT (5 parts default, 4 when open)  -->
-      <!-- Card Grid fits 4 cards across on desktop viewports       -->
-      <!-- ======================================================== -->
-      <main class="{activeJob ? 'lg:col-span-4' : 'lg:col-span-5'} space-y-3">
-        <!-- Top Search Bar & Counter -->
-        <div class="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 bg-[var(--color-surface)] p-2 rounded-xl border border-[var(--color-border-subtle)]">
-          <div class="relative flex-1">
-            <span class="absolute left-3 top-2 text-neutral-400">
-              <Icon name="search" size={14} />
-            </span>
-            <input
-              type="text"
-              placeholder="Cari judul posisi, keahlian, teknologi, atau perusahaan..."
-              bind:value={searchQuery}
-              oninput={loadJobs}
-              class="w-full text-xs pl-8 pr-8 py-1.5 rounded-lg bg-white border border-[var(--color-border-subtle)] text-black placeholder-neutral-400 focus:outline-none focus:ring-1 focus:ring-black"
-            />
-            {#if searchQuery}
-              <button
-                onclick={() => { searchQuery = ''; loadJobs(); }}
-                class="absolute right-2.5 top-2 text-neutral-400 hover:text-black cursor-pointer"
-              >
-                <Icon name="x" size={12} />
-              </button>
-            {/if}
-          </div>
-
-          <div class="flex items-center gap-2 px-2 text-xs text-neutral-600">
-            {#if loading}
-              <span class="flex items-center gap-1.5 text-neutral-500">
-                <span class="w-3 h-3 border-2 border-neutral-400 border-t-black rounded-full animate-spin"></span>
-                Memperbarui...
-              </span>
-            {:else}
-              <span class="font-mono text-[11px]">
-                <strong class="text-black">{jobs.length}</strong> lowongan ditemukan
-              </span>
-            {/if}
-          </div>
-        </div>
-
-        <!-- Active Filter Pills Bar (Strict Monochrome) -->
-        {#if selectedRole !== 'all' || selectedExperience !== 'all' || selectedArea !== 'all' || selectedSource !== 'all' || selectedCompany !== 'all' || onlyNew}
-          <div class="flex flex-wrap items-center gap-1.5 text-xs">
-            <span class="text-[11px] font-mono text-neutral-500">Aktif:</span>
-            {#if selectedRole !== 'all'}
-              <span class="ui-chip ui-chip-active text-[11px] gap-1">
-                Role: {selectedRole}
-                <button onclick={() => { selectedRole = 'all'; loadJobs(); }} class="cursor-pointer ml-0.5"><Icon name="x" size={10} /></button>
-              </span>
-            {/if}
-            {#if selectedExperience !== 'all'}
-              <span class="ui-chip ui-chip-active text-[11px] gap-1">
-                Exp: {selectedExperience}
-                <button onclick={() => { selectedExperience = 'all'; loadJobs(); }} class="cursor-pointer ml-0.5"><Icon name="x" size={10} /></button>
-              </span>
-            {/if}
-            {#if selectedCompany !== 'all'}
-              <span class="ui-chip ui-chip-active text-[11px] gap-1">
-                PT: {selectedCompany}
-                <button onclick={() => { selectedCompany = 'all'; loadJobs(); }} class="cursor-pointer ml-0.5"><Icon name="x" size={10} /></button>
-              </span>
-            {/if}
-            {#if selectedArea !== 'all'}
-              <span class="ui-chip ui-chip-active text-[11px] gap-1">
-                Area: {selectedArea}
-                <button onclick={() => { selectedArea = 'all'; loadJobs(); }} class="cursor-pointer ml-0.5"><Icon name="x" size={10} /></button>
-              </span>
-            {/if}
-            {#if selectedSource !== 'all'}
-              <span class="ui-chip ui-chip-active text-[11px] gap-1">
-                Platform: {selectedSource}
-                <button onclick={() => { selectedSource = 'all'; loadJobs(); }} class="cursor-pointer ml-0.5"><Icon name="x" size={10} /></button>
-              </span>
-            {/if}
-            {#if onlyNew}
-              <span class="ui-chip ui-chip-active text-[11px] gap-1">
-                Baru Saja
-                <button onclick={() => { onlyNew = false; loadJobs(); }} class="cursor-pointer ml-0.5"><Icon name="x" size={10} /></button>
-              </span>
-            {/if}
-          </div>
-        {/if}
-
-        <!-- Empty State -->
-        {#if jobs.length === 0 && !loading}
-          <div class="text-center py-16 px-4 bg-[var(--color-surface)] rounded-xl border border-[var(--color-border-subtle)] space-y-2">
-            <div class="w-10 h-10 rounded-full bg-white border border-neutral-300 mx-auto flex items-center justify-center text-neutral-500">
-              <Icon name="search" size={18} />
-            </div>
-            <p class="text-sm font-semibold text-black">Tidak ada lowongan yang sesuai kriteria.</p>
-            <p class="text-xs text-neutral-500 max-w-sm mx-auto">
-              Coba perluas filter role, perusahaan, atau level pengalaman, atau klik "Scrape Sekarang".
-            </p>
-          </div>
-        {:else}
-          <!-- Card Feed Grid: Configured to fit 4 cards across on desktop viewports -->
-          <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 {activeJob ? 'xl:grid-cols-3 2xl:grid-cols-4' : 'xl:grid-cols-4 2xl:grid-cols-4'} gap-2.5">
-            {#each jobs as j}
-              <div
-                role="button"
-                tabindex="0"
-                onclick={() => selectJob(j)}
-                onkeydown={(e) => e.key === 'Enter' && selectJob(j)}
-                class="text-left bg-white rounded-xl p-3 border transition duration-150 flex flex-col justify-between cursor-pointer group hover:border-black hover:shadow-xs {activeJob && activeJob.id === j.id ? 'border-black ring-2 ring-black/20 bg-neutral-50' : (j.is_new ? 'border-black/40 bg-neutral-50/50' : 'border-[var(--color-border-subtle)]')}"
-              >
-                <div class="space-y-2">
-                  <!-- Header: Company Logo + Title/Company + Badges -->
-                  <div class="flex items-start gap-2.5">
-                    <!-- Company Logo thumbnail with letter avatar fallback -->
-                    <div class="w-9 h-9 rounded-lg border border-neutral-200 bg-white p-0.5 flex items-center justify-center shrink-0 overflow-hidden shadow-2xs">
-                      {#if j.company_logo}
-                        <img
-                          src={j.company_logo}
-                          alt={j.company}
-                          class="w-full h-full object-contain"
-                          onerror={(e) => { e.currentTarget.style.display = 'none'; if (e.currentTarget.nextElementSibling) e.currentTarget.nextElementSibling.style.display = 'flex'; }}
-                        />
-                        <span class="w-full h-full bg-neutral-100 text-black font-mono font-bold text-xs items-center justify-center hidden">
-                          {j.company ? j.company.charAt(0).toUpperCase() : 'J'}
-                        </span>
-                      {:else}
-                        <span class="w-full h-full bg-neutral-100 text-black font-mono font-bold text-xs flex items-center justify-center">
-                          {j.company ? j.company.charAt(0).toUpperCase() : 'J'}
-                        </span>
-                      {/if}
-                    </div>
-
-                    <!-- Title & Company name -->
-                    <div class="min-w-0 flex-1">
-                      <h3 class="text-xs font-bold text-black line-clamp-2 leading-snug group-hover:underline">
-                        {j.title}
-                      </h3>
-                      <!-- Clickable company name filters across aggregators -->
-                      <button
-                        type="button"
-                        onclick={(e) => { e.stopPropagation(); filterByCompany(j.company); }}
-                        class="text-[11px] text-neutral-600 hover:text-black hover:underline truncate text-left cursor-pointer font-medium block max-w-full mt-0.5"
-                        title="Filter hanya perusahaan ini"
-                      >
-                        {j.company}
-                      </button>
-                    </div>
-
-                    <!-- NEW badge if applicable -->
-                    {#if j.is_new}
-                      <span class="shrink-0 px-1.5 py-0.5 rounded bg-black text-white text-[9px] font-mono font-bold">
-                        NEW
-                      </span>
-                    {/if}
-                  </div>
-
-                  <!-- Metadata Badges row -->
-                  <div class="flex flex-wrap items-center gap-1 text-[10px] font-mono">
-                    <!-- Source badge -->
-                    {#if j.sources && j.sources.length > 1}
-                      <span class="px-1.5 py-0.5 rounded bg-neutral-100 text-black border border-neutral-300 font-semibold">
-                        {j.sources.length} SITUS
-                      </span>
-                    {:else}
-                      <span class="px-1.5 py-0.5 rounded bg-neutral-100 text-neutral-700 border border-neutral-200 uppercase">
-                        {j.source || 'PORTAL'}
-                      </span>
-                    {/if}
-
-                    <!-- Role Category badge -->
-                    <span class="px-1.5 py-0.5 rounded bg-neutral-100 text-neutral-800 border border-neutral-200">
-                      {formatRole(j.role_category)}
-                    </span>
-
-                    <!-- Experience Bracket badge -->
-                    {#if j.experience_level && j.experience_level !== 'unspecified'}
-                      <span class="px-1.5 py-0.5 rounded bg-black text-white font-medium">
-                        {j.experience_level.toUpperCase()}
-                      </span>
-                    {/if}
-                  </div>
-
-                  <!-- Experience requirement snippet -->
-                  <div class="text-[11px] text-neutral-600 font-mono truncate flex items-center gap-1">
-                    <Icon name="briefcase" size={11} class="text-neutral-400 shrink-0" />
-                    <span class="truncate">{formatExp(j)}</span>
-                  </div>
-
-                  <!-- Location & Salary -->
-                  <div class="flex items-center justify-between text-[11px] text-neutral-500 pt-0.5">
-                    <span class="flex items-center gap-1 truncate max-w-[60%]">
-                      <Icon name="mapPin" size={11} class="shrink-0 text-neutral-400" />
-                      <span class="truncate">{formatArea(j.area)}</span>
-                    </span>
-
-                    {#if j.salary}
-                      <span class="text-black font-semibold font-mono text-[10px] truncate">
-                        {j.salary}
-                      </span>
-                    {/if}
-                  </div>
-                </div>
-
-                <!-- Footer Card -->
-                <div class="mt-2.5 pt-2 border-t border-[var(--color-border-subtle)] flex items-center justify-between text-[11px] text-neutral-500">
-                  <span class="font-mono flex items-center gap-1 text-[10px]">
-                    <Icon name="clock" size={11} />
-                    {formatTime(j.posted_at || j.first_seen_at)}
-                  </span>
-
-                  <span class="text-xs font-semibold text-neutral-700 group-hover:text-black flex items-center gap-0.5">
-                    <span>Lihat</span>
-                    <Icon name="arrowDownRight" size={11} />
-                  </span>
-                </div>
-              </div>
-            {/each}
-          </div>
-        {/if}
-      </main>
-
-      <!-- ========================================================= -->
-      <!-- COLUMN 3: SIDEBAR DETAIL (1 part, visible when card clicked) -->
-      <!-- Sticky, No outer section padding                         -->
-      <!-- ========================================================= -->
-      {#if activeJob}
-        <aside class="lg:col-span-1 sticky top-16 max-h-[calc(100vh-4.75rem)] overflow-y-auto space-y-3.5 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-3 shadow-xs">
-          <!-- Top Close & Action header -->
-          <div class="flex items-center justify-between pb-2 border-b border-[var(--color-border-subtle)]">
-            <span class="text-xs font-mono uppercase tracking-wider text-neutral-500">
-              Detail Loker
-            </span>
-            <div class="flex items-center gap-1.5">
-              <a
-                href={activeJob.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                class="control-pill px-2.5 py-1 text-[11px] font-mono flex items-center gap-1 text-black font-semibold"
-                title="Buka Halaman Loker Asli"
-              >
-                <span>Buka</span>
-                <Icon name="arrowUpRight" size={11} />
-              </a>
-
-              <button
-                onclick={() => (activeJob = null)}
-                class="p-1 rounded-md text-neutral-500 hover:text-black hover:bg-neutral-200/60 cursor-pointer"
-                title="Tutup Detail"
-              >
-                <Icon name="x" size={14} />
-              </button>
-            </div>
-          </div>
-
-          <!-- Company Logo + Title + Company (flush) -->
-          <div class="space-y-2">
-            <div class="flex items-start gap-2.5">
-              <!-- Detail Company Logo -->
-              <div class="w-11 h-11 rounded-lg border border-neutral-300 bg-white p-0.5 flex items-center justify-center shrink-0 overflow-hidden shadow-2xs">
-                {#if activeJob.company_logo}
-                  <img
-                    src={activeJob.company_logo}
-                    alt={activeJob.company}
-                    class="w-full h-full object-contain"
-                    onerror={(e) => { e.currentTarget.style.display = 'none'; if (e.currentTarget.nextElementSibling) e.currentTarget.nextElementSibling.style.display = 'flex'; }}
-                  />
-                  <span class="w-full h-full bg-neutral-100 text-black font-mono font-bold text-sm items-center justify-center hidden">
-                    {activeJob.company ? activeJob.company.charAt(0).toUpperCase() : 'J'}
-                  </span>
-                {:else}
-                  <span class="w-full h-full bg-neutral-100 text-black font-mono font-bold text-sm flex items-center justify-center">
-                    {activeJob.company ? activeJob.company.charAt(0).toUpperCase() : 'J'}
-                  </span>
-                {/if}
-              </div>
-
-              <div class="min-w-0 flex-1">
-                <h2 class="text-xs font-bold text-black leading-snug">
-                  {activeJob.title}
-                </h2>
-                <!-- Clickable company filter in detail -->
-                <button
-                  type="button"
-                  onclick={() => filterByCompany(activeJob.company)}
-                  class="text-xs text-neutral-600 hover:text-black hover:underline font-semibold mt-0.5 text-left truncate block max-w-full cursor-pointer"
-                  title="Filter hanya perusahaan ini"
-                >
-                  {activeJob.company}
-                </button>
-              </div>
-            </div>
-
-            <div class="text-xs text-neutral-600 space-y-1 pt-1 font-mono">
-              <p class="flex items-center gap-1.5">
-                <Icon name="mapPin" size={12} class="text-neutral-400 shrink-0" />
-                <span class="truncate">{activeJob.location_raw || formatArea(activeJob.area)}</span>
-              </p>
-              {#if activeJob.salary}
-                <p class="flex items-center gap-1.5 font-bold text-black">
-                  <Icon name="banknote" size={12} class="text-neutral-400 shrink-0" />
-                  <span>{activeJob.salary}</span>
-                </p>
-              {/if}
-            </div>
-          </div>
-
-          <!-- Role & Experience Spec (flush, no outer padding) -->
-          <div class="space-y-1.5 pt-2.5 border-t border-[var(--color-border-subtle)]">
-            <div class="text-[10px] font-mono uppercase tracking-wider text-neutral-500">
-              Klasifikasi Sistem
-            </div>
-            <div class="space-y-1 text-xs">
-              <div class="flex items-center justify-between">
-                <span class="text-neutral-500">Kategori:</span>
-                <span class="font-bold text-black">{formatRole(activeJob.role_category)}</span>
-              </div>
-              <div class="flex items-center justify-between">
-                <span class="text-neutral-500">Level:</span>
-                <span class="font-bold text-black">{activeJob.experience_level ? activeJob.experience_level.toUpperCase() : 'FLEKSIBEL'}</span>
-              </div>
-              {#if activeJob.min_years !== null || activeJob.max_years !== null}
-                <div class="flex items-center justify-between text-[11px] font-mono">
-                  <span class="text-neutral-500">Rentang:</span>
-                  <span class="text-black font-semibold">
-                    {activeJob.min_years !== null ? activeJob.min_years : 0} - {activeJob.max_years !== null ? activeJob.max_years : '+'} th
-                  </span>
-                </div>
-              {/if}
-              {#if activeJob.experience_raw}
-                <div class="pt-1 text-[10px] font-mono text-neutral-500">
-                  Kutipan: "{activeJob.experience_raw}"
-                </div>
-              {/if}
-            </div>
-          </div>
-
-          <!-- Timeline Section (flush) -->
-          <div class="space-y-1.5 pt-2.5 border-t border-[var(--color-border-subtle)]">
-            <div class="text-[10px] font-mono uppercase tracking-wider text-neutral-500">
-              Timeline Loker
-            </div>
-            <Timeline job={activeJob} />
-          </div>
-
-          <!-- Description Section (flush) -->
-          <div class="space-y-1.5 pt-2.5 border-t border-[var(--color-border-subtle)]">
-            <div class="text-[10px] font-mono uppercase tracking-wider text-neutral-500">
-              Deskripsi Pekerjaan
-            </div>
-            {#if activeJob.description && activeJob.description.trim()}
-              <div class="text-xs text-neutral-700 whitespace-pre-wrap leading-relaxed max-h-52 overflow-y-auto pr-1 border border-[var(--color-border-subtle)] bg-white p-2 rounded-lg font-sans">
-                {activeJob.description}
-              </div>
-            {:else}
-              <p class="text-xs text-neutral-400 italic bg-white p-2.5 rounded-lg border border-[var(--color-border-subtle)]">
-                Deskripsi lengkap tersedia langsung di portal perekrut.
-              </p>
-            {/if}
-          </div>
-
-          <!-- Direct Apply / Platform Links (flush) -->
-          <div class="pt-2.5 border-t border-[var(--color-border-subtle)] space-y-1.5">
-            {#if activeJob.sources && activeJob.sources.length > 1 && activeJob.urls}
-              <div class="space-y-1">
-                <span class="text-[10px] font-mono text-neutral-500">Tersedia di {activeJob.sources.length} portal:</span>
-                <div class="grid grid-cols-2 gap-1.5 pt-0.5">
-                  {#each activeJob.sources as src}
-                    <a
-                      href={activeJob.urls[src]}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      class="control-pill px-2 py-1 text-xs text-center truncate capitalize text-black font-semibold"
-                    >
-                      {src} ↗
-                    </a>
-                  {/each}
-                </div>
-              </div>
-            {:else}
-              <a
-                href={activeJob.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                class="control-pill control-pill-active w-full py-2 text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer text-decoration-none"
-              >
-                <span>Buka di {activeJob.source ? activeJob.source.toUpperCase() : 'Portal'}</span>
-                <Icon name="arrowUpRight" size={13} />
-              </a>
-            {/if}
-          </div>
-        </aside>
+  {#snippet results()}
+    <div class="results-search">
+      <button class="ui-icon-button mobile-filter-toggle" onclick={() => { mobileFilterOpen = true; mobileDetailOpen = false; }} title="Buka filter" aria-label="Buka filter"><Icon name="filter" size={16}/></button>
+      <Icon name="search" size={16} class="text-[var(--color-text-muted)]"/>
+      <input
+        type="search"
+        placeholder="Cari posisi, perusahaan, atau teknologi…"
+        aria-label="Cari lowongan"
+        bind:value={searchQuery}
+        oninput={scheduleLoadJobs}
+      />
+      {#if searchQuery}
+        <button class="ui-icon-button" onclick={() => { searchQuery = ''; loadJobs(); }} aria-label="Kosongkan pencarian"><Icon name="x" size={14}/></button>
       {/if}
-
     </div>
-  </div>
-
-  <!-- Add Saved Search Modal (Strict Monochrome) -->
-  {#if showAddSearch}
-    <div class="fixed inset-0 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-      <div class="bg-white rounded-2xl max-w-md w-full p-5 shadow-2xl border border-[var(--color-border)] space-y-4">
-        <div class="flex items-center justify-between pb-3 border-b border-[var(--color-border-subtle)]">
-          <div class="flex items-center gap-2">
-            <span class="w-6 h-6 rounded-full bg-black text-white flex items-center justify-center">
-              <Icon name="plus" size={13} />
-            </span>
-            <h3 class="text-sm font-bold text-black">
-              Simpan Pencarian Otomatis
-            </h3>
-          </div>
-          <button
-            onclick={() => (showAddSearch = false)}
-            class="text-neutral-500 hover:text-black cursor-pointer p-1"
-          >
-            <Icon name="x" size={15} />
-          </button>
+    <div class="results-toolbar">
+      <strong>{showSavedOnly ? 'Saved positions' : selectedRole === 'all' ? 'All positions' : roleCategories.find(r => r.id === selectedRole)?.label}</strong>
+      <span class="results-count">{loading ? 'Memuat…' : visibleJobs.length + ' ditampilkan'}</span>
+      <div class="results-actions">
+        <button type="button" class="ui-icon-button" class:is-active={showSavedOnly} onclick={() => showSavedOnly = !showSavedOnly} aria-pressed={showSavedOnly} title="Hanya simpanan lokal" aria-label="Tampilkan posisi tersimpan"><Icon name="bookmark" size={16}/></button>
+        <div class="view-segments" aria-label="Mode tampilan">
+          <button type="button" aria-label="Grid view" aria-pressed={displayMode === 'grid'} onclick={() => displayMode = 'grid'}><Icon name="grid" size={14}/></button>
+          <button type="button" aria-label="List view" aria-pressed={displayMode === 'list'} onclick={() => displayMode = 'list'}><Icon name="list" size={14}/></button>
         </div>
-
-        <form onsubmit={submitNewSearch} class="space-y-3.5">
-          <div>
-            <label for="kw-input" class="block text-xs font-mono uppercase tracking-wider text-neutral-600 mb-1">
-              Kata Kunci Posisi / Skill
-            </label>
-            <input
-              id="kw-input"
-              type="text"
-              required
-              placeholder="e.g. Junior Backend Engineer, Golang, React"
-              bind:value={newKeyword}
-              class="w-full text-xs px-3 py-2 rounded-lg border border-[var(--color-border)] bg-white text-black focus:outline-none focus:ring-1 focus:ring-black"
-            />
-          </div>
-
-          <div>
-            <label for="area-select" class="block text-xs font-mono uppercase tracking-wider text-neutral-600 mb-1">
-              Target Area
-            </label>
-            <select
-              id="area-select"
-              bind:value={newArea}
-              class="w-full text-xs px-3 py-2 rounded-lg border border-[var(--color-border)] bg-white text-black focus:outline-none focus:ring-1 focus:ring-black"
-            >
-              {#each areas as a}
-                <option value={a.id}>{a.label}</option>
-              {/each}
-            </select>
-          </div>
-
-          <div>
-            <span class="block text-xs font-mono uppercase tracking-wider text-neutral-600 mb-1.5">
-              Sumber Platform Tiap Jam
-            </span>
-            <div class="grid grid-cols-2 gap-2 text-xs font-mono">
-              <label class="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" bind:checked={newSources.jobstreet} class="accent-black rounded" />
-                JobStreet
-              </label>
-              <label class="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" bind:checked={newSources.kalibrr} class="accent-black rounded" />
-                Kalibrr
-              </label>
-              <label class="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" bind:checked={newSources.linkedin} class="accent-black rounded" />
-                LinkedIn
-              </label>
-              <label class="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" bind:checked={newSources.glints} class="accent-black rounded" />
-                Glints
-              </label>
-              <label class="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" bind:checked={newSources.dealls} class="accent-black rounded" />
-                Dealls
-              </label>
-              <label class="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" bind:checked={newSources.karir} class="accent-black rounded" />
-                Karir.com
-              </label>
-              <label class="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" bind:checked={newSources.techinasia} class="accent-black rounded" />
-                Tech in Asia
-              </label>
-            </div>
-          </div>
-
-          <div class="pt-3 border-t border-[var(--color-border-subtle)] flex justify-end gap-2">
-            <button
-              type="button"
-              onclick={() => (showAddSearch = false)}
-              class="control-pill px-3 py-1.5 text-xs text-neutral-600 hover:text-black cursor-pointer"
-            >
-              Batal
-            </button>
-            <button
-              type="submit"
-              class="control-pill control-pill-active px-4 py-1.5 text-xs font-bold cursor-pointer"
-            >
-              Simpan Pencarian
-            </button>
-          </div>
-        </form>
       </div>
     </div>
-  {/if}
-</div>
+    <div class="results-content">
+      {#if jobsError}
+        <div class="ui-empty" role="alert"><strong>Gagal memuat lowongan</strong>{jobsError}<div style="margin-top:12px"><Button onclick={loadJobs}>Coba lagi</Button></div></div>
+      {:else if !loading && visibleJobs.length === 0}
+        <div class="ui-empty"><strong>Tidak ada posisi yang cocok</strong>{showSavedOnly ? 'Belum ada lowongan yang disimpan secara lokal.' : 'Ubah filter atau pencarian untuk memperluas hasil.'}<div style="margin-top:12px"><Button onclick={() => { showSavedOnly = false; resetAllFilters(); }}>Reset filter</Button></div></div>
+      {:else}
+        <div class="job-board" class:is-list={displayMode === 'list'}>
+          {#each visibleJobs as job (job.id)}
+            <JobCard
+              {job}
+              selected={activeJob?.id === job.id}
+              saved={savedIds.includes(job.id)}
+              onSelect={chooseJob}
+              onSave={toggleSaved}
+              {formatRole}
+              {formatArea}
+              {formatTime}
+            />
+          {/each}
+        </div>
+      {/if}
+    </div>
+  {/snippet}
+
+  {#snippet inspector()}
+    <JobInspector
+      job={activeJob}
+      saved={activeJob ? savedIds.includes(activeJob.id) : false}
+      onClose={() => { activeJob = null; mobileDetailOpen = false; }}
+      onCompany={filterByCompany}
+      onSeen={markJobSeen}
+      onSave={toggleSaved}
+      {formatRole}
+      {formatArea}
+    />
+  {/snippet}
+</WorkspaceShell>
+
+{#if showAddSearch}
+  <div class="ui-modal-backdrop" role="presentation">
+    <section class="ui-modal" role="dialog" aria-modal="true" aria-labelledby="add-search-title">
+      <div class="ui-modal-header">
+        <h2 id="add-search-title">Tambah pencarian otomatis</h2>
+        <button type="button" class="ui-icon-button" onclick={() => showAddSearch = false} aria-label="Tutup dialog"><Icon name="x" size={16}/></button>
+      </div>
+      <form onsubmit={submitNewSearch}>
+        <div class="ui-modal-field">
+          <label for="search-keyword">Kata kunci posisi / skill</label>
+          <input id="search-keyword" class="ui-input" required placeholder="Junior Backend Engineer, Golang, React…" bind:value={newKeyword}/>
+        </div>
+        <div class="ui-modal-field">
+          <label for="search-area">Target area</label>
+          <select id="search-area" class="ui-input" bind:value={newArea}>
+            {#each areas as a}<option value={a.id}>{a.label}</option>{/each}
+          </select>
+        </div>
+        <fieldset class="ui-platforms">
+          <legend class="ui-eyebrow">Sumber portal</legend>
+          {#each sourceLabels as [sourceId, sourceName]}
+            <label><input type="checkbox" checked={newSources[sourceId]} onchange={(e) => newSources[sourceId] = e.currentTarget.checked}/>{sourceName}</label>
+          {/each}
+        </fieldset>
+        <div class="ui-modal-actions">
+          <Button onclick={() => showAddSearch = false}>Batal</Button>
+          <Button type="submit" variant="primary">Simpan pencarian</Button>
+        </div>
+      </form>
+    </section>
+  </div>
+{/if}
