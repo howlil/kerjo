@@ -6,6 +6,7 @@ import threading
 import tempfile
 import os
 from jobhunt.db import Database
+from jobhunt.freshness import utc_now
 from jobhunt.server import create_server
 
 class TestServer(unittest.TestCase):
@@ -26,6 +27,7 @@ class TestServer(unittest.TestCase):
                 location_raw="Kuningan, Jakarta Selatan",
                 area="jakarta_selatan",
                 url="https://id.jobstreet.com/job/101",
+                posted_at=utc_now().isoformat(),
             )
         ])
         cls.server = create_server(host="127.0.0.1", port=0, db=cls.db)
