@@ -114,6 +114,29 @@ class TestExtendedAPI(unittest.TestCase):
                 time.sleep(0.05)
             self.assertEqual(progress["run"]["status"],"completed")
 
+    def test_all_partial_sources_are_reported_partial_not_failed(self):
+        def partial(_):
+            return SourceResult(source="jobstreet", success=True,
+                                error_message="Partial page collection: HTTP 503",
+                                jobs=[Job(source="jobstreet", external_id="partial-valid",
+                                          title="Backend Engineer",company="Partial Corp",
+                                          location_raw="Jakarta Selatan",area="jakarta_selatan",
+                                          url="https://example.org/partial-valid",
+                                          posted_at=utc_now().isoformat())])
+        with patch("jobhunt.runner.DEFAULT_SOURCES",{"jobstreet":partial}):
+            status, created=self.api("/api/run","POST",{})
+            self.assertEqual(status,202)
+            run = None
+            for _ in range(50):
+                _, payload=self.api("/api/run/"+str(created["run_id"]))
+                run=payload["run"]
+                if run["status"] in ("partial","completed","failed"):
+                    break
+                time.sleep(0.05)
+            self.assertEqual(run["status"],"partial")
+            self.assertEqual(run["jobs_recent"],1)
+            self.assertEqual(run["errors"],1)
+
     def test_paused_search_returns_skipped_without_new_tasks(self):
         for search in self.db.get_searches():
             self.db.set_search_active(search["id"], False)
