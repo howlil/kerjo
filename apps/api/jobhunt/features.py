@@ -180,12 +180,17 @@ class FeatureStore:
             return jobs
         prefs = preferences if preferences is not None else self.get_preferences()
         ids = sorted({int(i) for job in jobs for i in (job.get("ids") or [job["id"]])})
+        saved = set()
+        apps = {}
+        # Bound parameter counts even on older SQLite builds.
         with self.db._get_connection() as conn:
-            placeholders = ",".join("?" for _ in ids)
-            saved = {row["job_id"] for row in conn.execute(
-                "SELECT job_id FROM saved_jobs WHERE job_id IN (" + placeholders + ")", ids)}
-            apps = {row["job_id"]: dict(row) for row in conn.execute(
-                "SELECT * FROM applications WHERE job_id IN (" + placeholders + ")", ids)}
+            for start in range(0, len(ids), 500):
+                chunk = ids[start:start + 500]
+                placeholders = ",".join("?" for _ in chunk)
+                saved.update(row["job_id"] for row in conn.execute(
+                    "SELECT job_id FROM saved_jobs WHERE job_id IN (" + placeholders + ")", chunk))
+                apps.update({row["job_id"]: dict(row) for row in conn.execute(
+                    "SELECT * FROM applications WHERE job_id IN (" + placeholders + ")", chunk)})
         for job in jobs:
             group_ids = job.get("ids") or [job["id"]]
             job["is_saved"] = int(any(i in saved for i in group_ids))
