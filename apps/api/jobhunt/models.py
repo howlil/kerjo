@@ -22,6 +22,11 @@ class Job:
     role_category: Optional[str] = None
     company_logo: Optional[str] = None
     work_mode: Optional[str] = None
+    description_status: str = "missing"
+    description_source: Optional[str] = None
+    application_url: Optional[str] = None
+    application_evidence: Optional[str] = None
+    origin_url: Optional[str] = None
 
     def to_dict(self):
         return asdict(self)
