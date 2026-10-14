@@ -63,7 +63,7 @@ def parse_glints_payload(data: dict) -> list[Job]:
         is_remote = arrangement in ("REMOTE", "HYBRID")
         work_type = item.get("type")
 
-        posted_at = item.get("createdAt")
+        posted_at = item.get("publishedAt") or item.get("postedAt") or item.get("createdAt")
         desc = (item.get("briefJobDescription") or item.get("description") or "").strip()
         min_exp = item.get("minYearsOfExperience")
         max_exp = item.get("maxYearsOfExperience")
