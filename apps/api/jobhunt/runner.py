@@ -13,6 +13,9 @@ from jobhunt.sources.glints import fetch_glints
 from jobhunt.sources.dealls import fetch_dealls
 from jobhunt.sources.karir import fetch_karir
 from jobhunt.sources.techinasia import fetch_techinasia
+from jobhunt.sources.ats import fetch_ats
+from jobhunt.sources.linkedin_posts import fetch_linkedin_posts
+from jobhunt.enrichment import enrich_job, allowed_detail_url
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +56,12 @@ def collect_pages(source, fetch_page, page_limit=None):
 DEFAULT_SOURCES: Dict[str, Callable[[str], SourceResult]] = {
     "jobstreet": lambda kw: collect_pages("jobstreet", lambda p: fetch_jobstreet(kw, page=p)),
     "kalibrr": lambda kw: collect_pages("kalibrr", lambda p: fetch_kalibrr(kw, offset=(p - 1) * 30)),
-    "linkedin": lambda kw: collect_pages("linkedin", lambda p: fetch_linkedin(kw, start=(p - 1) * 25)),
+    # Historical saved queries report a clear error instead of silently scraping
+    # LinkedIn's undocumented guest endpoints.
+    "linkedin": lambda kw: SourceResult("linkedin", False, [],
+        "Retired unsupported guest scraper; use authorized linkedin_posts or manual post intake"),
+    "linkedin_posts": fetch_linkedin_posts,
+    "ats": fetch_ats,
     "glints": lambda kw: fetch_glints(kw),
     "dealls": lambda kw: collect_pages("dealls", lambda p: fetch_dealls(kw, page=p)),
     "karir": lambda kw: collect_pages("karir", lambda p: fetch_karir(kw, page=p)),
@@ -131,6 +139,7 @@ class JobRunner:
         self.db = db or Database()
         self.sources = sources if sources is not None else DEFAULT_SOURCES
         self.lock_file = lock_file
+        self.detail_cache = {}
 
     def run_all_active(self, on_progress=None) -> List[Dict[str, Any]]:
         """
@@ -235,6 +244,32 @@ class JobRunner:
         if area_filter and area_filter != "all":
             matched_jobs = [j for j in matched_jobs if j.area in (area_filter, "unspecified")]
 
+        # Enrichment is bounded and cached across keywords within one manual run.
+        # Unknown-date jobs may acquire datePosted from JSON-LD detail pages.
+        budget = min(30, max(0, int(os.getenv("KERJO_ENRICH_LIMIT", "12"))))
+        attempted = 0
+        for job in matched_jobs:
+            if job.description_status == "complete":
+                continue
+            if not allowed_detail_url(job.url):
+                job.description_status = "partial" if job.description else "missing"
+                job.description_source = job.description_source or ("search-result" if job.description else None)
+                continue
+            if job.url in self.detail_cache:
+                detail = self.detail_cache[job.url]
+                if detail:
+                    job.description = detail.description
+                    job.description_status = detail.description_status
+                    job.description_source = detail.description_source
+                    job.posted_at = job.posted_at or detail.posted_at
+                continue
+            if attempted >= budget:
+                continue
+            if posting_age_status(job.posted_at) in ("old", "future"):
+                continue
+            attempted += 1
+            enriched = enrich_job(job)
+            self.detail_cache[job.url] = enriched
         age_counts = {"recent": 0, "old": 0, "unknown": 0, "future": 0}
         recent_jobs = []
         for job in matched_jobs:
@@ -246,6 +281,8 @@ class JobRunner:
                 recent_jobs.append(job)
 
         new_count, _ = self.db.upsert_jobs(recent_jobs)
+        full_descriptions = sum(j.description_status == "complete" for j in recent_jobs)
+        missing_descriptions = sum(not j.description for j in recent_jobs)
         status = "partial" if source_result.error_message else "success"
         self.db.record_run(
             source=source_name,
@@ -270,5 +307,8 @@ class JobRunner:
             "filtered_unknown": age_counts["unknown"],
             "filtered_future": age_counts["future"],
             "new_count": new_count,
+            "descriptions_complete": full_descriptions,
+            "descriptions_missing": missing_descriptions,
+            "detail_requests": attempted,
             "error": source_result.error_message,
         }
