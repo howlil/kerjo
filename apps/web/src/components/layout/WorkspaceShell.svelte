@@ -1,20 +1,25 @@
 <script>
-  let { header, filters, results, inspector, filterOpen = false, detailOpen = false, onDismiss = () => {} } = $props();
+  let { header, filters, results, inspector, full, mode = 'discovery', filterOpen = false, detailOpen = false, onDismiss = () => {} } = $props();
 </script>
 <div class="workspace" class:filters-open={filterOpen} class:details-open={detailOpen}>
   <header class="workspace-header">{@render header()}</header>
+  {#if mode === 'discovery'}
   <div class="workspace-body">
     <aside class="workspace-filter" aria-label="Filter lowongan">{@render filters()}</aside>
     <main class="workspace-results" aria-label="Hasil pencarian lowongan">{@render results()}</main>
     <aside class="workspace-inspector" aria-label="Detail lowongan">{@render inspector()}</aside>
   </div>
-  {#if filterOpen || detailOpen}
+  {:else}
+    <main class="workspace-full" aria-label="Kerjo workspace">{@render full()}</main>
+  {/if}
+  {#if mode === 'discovery' && (filterOpen || detailOpen)}
     <button class="workspace-overlay" onclick={onDismiss} aria-label="Tutup panel"></button>
   {/if}
 </div>
 <style>
 .workspace{position:relative;height:100dvh;min-height:440px;width:100%;display:flex;flex-direction:column;overflow:hidden;background:var(--color-page)}
 .workspace-header{height:var(--workspace-header-height);min-height:var(--workspace-header-height);border-bottom:var(--workspace-rule);display:flex;align-items:center;padding:0 var(--space-4);gap:var(--space-3)}
+.workspace-full{min-height:0;flex:1;overflow:auto;background:var(--color-page)}
 .workspace-body{display:grid;grid-template-columns:var(--workspace-sidebar-width) minmax(0,1fr) var(--workspace-inspector-width);flex:1;min-height:0;overflow:hidden}
 .workspace-filter,.workspace-inspector{min-width:0;min-height:0;display:flex;flex-direction:column;background:var(--color-page)}
 .workspace-filter{border-right:var(--workspace-rule)}
