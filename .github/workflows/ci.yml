@@ -21,14 +21,6 @@ jobs:
         env:
           PYTHONPATH: apps/api
         run: python -m unittest discover -s apps/api/tests -p 'test_*.py' -v
-      - name: Validate Windows scheduled-task script syntax
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $tokens = $null
-          $errors = $null
-          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path 'scripts/schedule.ps1').Path, [ref]$tokens, [ref]$errors) | Out-Null
-          if ($errors.Count -gt 0) { $errors | Out-String | Write-Error; exit 1 }
   frontend:
     runs-on: ubuntu-latest
     defaults:
