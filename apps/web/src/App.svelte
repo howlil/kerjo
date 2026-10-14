@@ -242,7 +242,7 @@
       managingResults = false;
       activeJob = null;
       currentPage = 0;
-      await Promise.all([loadJobs(),loadCompanies(),loadApplications(),loadInventory()]);
+      await Promise.all([loadJobs(),loadCompanies(),loadApplications(),loadInventory(),loadPreview()]);
     } catch (error) {
       deleteError = error.message;
     } finally {
@@ -861,7 +861,9 @@
         page={previewPage} source={previewSource} query={previewQuery}
         sources={sourceLabels} onSource={setPreviewSource} onSearch={setPreviewQuery}
         onPage={setPreviewPage} onBack={() => {currentView='scraping';if(selectedRun)loadRunEvents(selectedRun.id);}}
-        onDiscover={() => {currentView='discovery';loadJobs();}} onSave={togglePreviewSaved}/>
+        onDiscover={() => {currentView='discovery';loadJobs();}} onSave={togglePreviewSaved}
+        deletingDisabled={runningScraper || deletingResults}
+        onDelete={(job) => {selectedRawIds = [...jobRowIds(job)];openDeleteDialog('selected');}}/>
     {/if}
   {/snippet}
 </WorkspaceShell>
