@@ -5,6 +5,7 @@ import re
 import logging
 from typing import Optional
 from jobhunt.models import Job, SourceResult
+from jobhunt.collection import retry_after_seconds
 from jobhunt.location import match_area
 
 logger = logging.getLogger(__name__)
@@ -63,7 +64,7 @@ def parse_glints_payload(data: dict) -> list[Job]:
         is_remote = arrangement in ("REMOTE", "HYBRID")
         work_type = item.get("type")
 
-        posted_at = item.get("publishedAt") or item.get("postedAt") or item.get("createdAt")
+        posted_at = item.get("publishedAt") or item.get("postedAt")
         desc = (item.get("briefJobDescription") or item.get("description") or "").strip()
         min_exp = item.get("minYearsOfExperience")
         max_exp = item.get("maxYearsOfExperience")
@@ -113,6 +114,7 @@ def fetch_glints(keyword: str, country: str = "ID") -> SourceResult:
                     success=False,
                     jobs=[],
                     error_message=f"HTTP status {response.status}",
+                    http_status=response.status,
                 )
             html_content = response.read().decode("utf-8", "replace")
             m = re.search(r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', html_content, re.S)
@@ -127,7 +129,7 @@ def fetch_glints(keyword: str, country: str = "ID") -> SourceResult:
             if not isinstance((payload.get("props") or {}).get("pageProps"), dict) or "initialJobs" not in payload["props"]["pageProps"]:
                 return SourceResult(source="glints", success=False, jobs=[], error_message="Unexpected provider schema")
             jobs = parse_glints_payload(payload)
-            return SourceResult(source="glints", success=True, jobs=jobs)
+            return SourceResult(source="glints", success=True, jobs=jobs, raw_count=len(payload["props"]["pageProps"]["initialJobs"].get("jobsInPage") or payload["props"]["pageProps"]["initialJobs"].get("jobs") or []) if isinstance(payload["props"]["pageProps"]["initialJobs"], dict) else len(payload["props"]["pageProps"]["initialJobs"]), pages_fetched=1)
     except urllib.error.HTTPError as e:
         return SourceResult(
             source="glints",
