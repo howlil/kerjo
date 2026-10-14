@@ -116,13 +116,15 @@ class TestExtendedAPI(unittest.TestCase):
                  for n in range(125)]
         self.db.upsert_jobs(extra)
         seen_ids = set()
-        for offset in range(0, 128, 30):
+        # Initial 3 source records contain one verified cross-source URL
+        # representing the same vacancy, therefore 2 unique + 125 = 127.
+        for offset in range(0, 127, 30):
             _, response = self.api("/api/jobs?limit=30&offset=" + str(offset))
-            self.assertEqual(response["total"], 128)
+            self.assertEqual(response["total"], 127)
             for job in response["jobs"]:
                 self.assertNotIn(job["id"], seen_ids)
                 seen_ids.add(job["id"])
-        self.assertEqual(len(seen_ids), 128)
+        self.assertEqual(len(seen_ids), 127)
 
     def test_untrusted_origin_write_rejected(self):
         req=urllib.request.Request(
