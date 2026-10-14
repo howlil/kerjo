@@ -166,7 +166,14 @@ class JobhuntRequestHandler(http.server.BaseHTTPRequestHandler):
                     return
                 limit = self._integer(query.get("limit", ["60"])[0], "limit", 1, 100)
                 offset = self._integer(query.get("offset", ["0"])[0], "offset", 0, 100000)
-                self._send_json(self.features.get_run_preview(run_id, limit=limit, offset=offset))
+                source = query.get("source", [None])[0]
+                if source not in (None, "all") and source not in DEFAULT_SOURCES:
+                    raise ValueError("Invalid source")
+                search_text = query.get("q", [None])[0]
+                if search_text is not None and len(search_text) > 120:
+                    raise ValueError("Search query too long")
+                self._send_json(self.features.get_run_preview(
+                    run_id, limit=limit, offset=offset, source=source, query_text=search_text))
                 return
             if path == "/api/run/latest":
                 batch = self.features.latest_batch()
