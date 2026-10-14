@@ -12,6 +12,8 @@ from jobhunt.db import Database
 from jobhunt.features import FeatureStore, utc_now
 from jobhunt.runner import JobRunner, RunnerLock, LockAcquireError, DEFAULT_SOURCES
 from jobhunt.dedup import group_dedup_jobs
+from jobhunt.sources.linkedin_posts import make_post_job
+from jobhunt.enrichment import enrich_job
 
 logger = logging.getLogger(__name__)
 
@@ -184,6 +186,31 @@ class JobhuntRequestHandler(http.server.BaseHTTPRequestHandler):
             return
         path = urllib.parse.urlparse(self.path).path
         try:
+            if path == "/api/linkedin-posts":
+                data = self._read_json_body()
+                posts = data.get("posts")
+                if posts is None:
+                    posts = [data]
+                if not isinstance(posts, list) or not 1 <= len(posts) <= 20:
+                    raise ValueError("Provide 1-20 recruiter posts")
+                accepted, rejected = [], []
+                for index, post in enumerate(posts):
+                    try:
+                        candidate = make_post_job(post)
+                        # Domain constrained; never fetch LinkedIn's website.
+                        accepted.append(enrich_job(candidate))
+                    except ValueError as exc:
+                        rejected.append({"index": index, "reason": str(exc)})
+                if not accepted:
+                    self._send_json({"error": "No qualifying job post", "rejected": rejected}, 400)
+                    return
+                new_count, _ = self.db.upsert_jobs(accepted)
+                self._send_json({
+                    "accepted": len(accepted), "new": new_count,
+                    "rejected": rejected,
+                    "note": "External links are candidates, not guarantees that hiring is active.",
+                }, 201)
+                return
             if path == "/api/searches":
                 data = self._read_json_body()
                 keyword = data.get("keyword", "")
