@@ -850,7 +850,7 @@
       <PreferencePanel {preferences} roles={roleCategories} {areas} sources={sourceHealth}
         onChange={(next)=>preferences=next} onSave={savePreferences} {formatTime}/>
     {:else if currentView === 'scraping'}
-      <ScrapingWorkspace run={selectedRun} runs={runHistory} events={runEvents} sources={sourceLabels}
+      <ScrapingWorkspace busy={runningScraper || deletingResults} run={selectedRun} runs={runHistory} events={runEvents} sources={sourceLabels}
         loading={runEventsLoading} error={runEventsError}
         onStart={triggerRun} onChooseRun={chooseRun}
         onPreview={() => {currentView='preview';loadPreview();}}
