@@ -114,7 +114,7 @@ def parse_ats_board(provider, board, payload):
 def fetch_ats(keyword):
     boards = configured_boards()
     if not boards:
-        return SourceResult("ats", True, [])
+        return SourceResult("ats", False, [], error_message="ATS boards belum dikonfigurasi; atur KERJO_ATS_BOARDS untuk company boards publik")
     jobs, failures = [], []
     for provider, board in boards:
         endpoint = {
