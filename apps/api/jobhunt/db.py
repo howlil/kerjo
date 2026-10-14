@@ -6,6 +6,7 @@ import os
 from typing import Optional, List, Dict, Any, Tuple
 from jobhunt.models import Job
 from jobhunt.classifier import classify_job
+from jobhunt.freshness import recent_posting
 
 class Database:
     def __init__(self, db_path: str = "data/jobs.db"):
@@ -83,6 +84,10 @@ class Database:
                     status TEXT NOT NULL,
                     jobs_found INTEGER NOT NULL DEFAULT 0,
                     jobs_new INTEGER NOT NULL DEFAULT 0,
+                    jobs_recent INTEGER NOT NULL DEFAULT 0,
+                    filtered_old INTEGER NOT NULL DEFAULT 0,
+                    filtered_unknown INTEGER NOT NULL DEFAULT 0,
+                    filtered_future INTEGER NOT NULL DEFAULT 0,
                     error_message TEXT,
                     ran_at TEXT NOT NULL,
                     FOREIGN KEY(search_id) REFERENCES searches(id) ON DELETE SET NULL
@@ -107,6 +112,12 @@ class Database:
                         conn.execute(f"ALTER TABLE jobs ADD COLUMN {col_name} {col_def}")
                     except sqlite3.OperationalError:
                         pass
+
+            # Historical databases must retain their existing job/application data.
+            run_cols = {row["name"] for row in conn.execute("PRAGMA table_info(job_runs)")}
+            for name in ("jobs_recent", "filtered_old", "filtered_unknown", "filtered_future"):
+                if name not in run_cols:
+                    conn.execute(f"ALTER TABLE job_runs ADD COLUMN {name} INTEGER NOT NULL DEFAULT 0")
 
             # Create indexes on migrated columns safely
             conn.execute("CREATE INDEX IF NOT EXISTS idx_jobs_exp_level ON jobs(experience_level);")
@@ -333,6 +344,7 @@ class Database:
         company: Optional[str] = None,
         limit: Optional[int] = 100,
         offset: int = 0,
+        posted_within_days: Optional[int] = None,
     ) -> List[Dict[str, Any]]:
         sql = "SELECT * FROM jobs WHERE 1=1"
         params: List[Any] = []
@@ -380,7 +392,14 @@ class Database:
 
         with self._get_connection() as conn:
             rows = conn.execute(sql, params).fetchall()
-            return [dict(r) for r in rows]
+            jobs = [dict(r) for r in rows]
+            if posted_within_days is not None:
+                # Parse dates instead of relying on lexical SQL comparisons:
+                # providers expose offset-aware ISO, date-only, and legacy formats.
+                if posted_within_days != 14:
+                    raise ValueError("Only the 14-day discovery window is supported")
+                jobs = [job for job in jobs if recent_posting(job.get("posted_at"))]
+            return jobs
 
     def get_companies(self, limit: int = 150) -> List[Dict[str, Any]]:
         with self._get_connection() as conn:
@@ -405,15 +424,22 @@ class Database:
         jobs_new: int = 0,
         error_message: Optional[str] = None,
         search_id: Optional[int] = None,
+        jobs_recent: int = 0,
+        filtered_old: int = 0,
+        filtered_unknown: int = 0,
+        filtered_future: int = 0,
     ):
         now = datetime.datetime.now(datetime.timezone.utc).isoformat()
         with self._get_connection() as conn:
             conn.execute(
                 """
-                INSERT INTO job_runs (search_id, source, status, jobs_found, jobs_new, error_message, ran_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO job_runs (
+                    search_id, source, status, jobs_found, jobs_new, jobs_recent,
+                    filtered_old, filtered_unknown, filtered_future, error_message, ran_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (search_id, source, status, jobs_found, jobs_new, error_message, now),
+                (search_id, source, status, jobs_found, jobs_new, jobs_recent,
+                 filtered_old, filtered_unknown, filtered_future, error_message, now),
             )
 
     def get_latest_runs(self, limit: int = 20) -> List[Dict[str, Any]]:
