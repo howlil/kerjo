@@ -17,7 +17,7 @@ from jobhunt.freshness import posting_age_status
 from jobhunt.location import match_area
 from jobhunt.models import Job, SourceResult
 
-URL_RE = re.compile(r"https://[^\s<>\[\]()\\"']+", re.I)
+URL_RE = re.compile(r"https://[^\s<>\[\]()]+", re.I)
 ROLE_RE = re.compile(
     r"\b(?:junior |senior |associate |staff |lead |graduate |internship |intern )?"
     r"(?:backend|back-end|frontend|front-end|full.?stack|software|platform|cloud|devops|data|qa|site reliability)"
@@ -43,7 +43,7 @@ def valid_post_url(url):
 def application_link(url):
     if not isinstance(url, str) or len(url) > 2048:
         return None
-    url = url.strip().rstrip(".,;:!>)")
+    url = url.strip().rstrip(".,;:!>)\\\'\\\"")
     try:
         p = urllib.parse.urlsplit(url)
         host = (p.hostname or "").lower()
