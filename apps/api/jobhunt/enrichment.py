@@ -122,7 +122,7 @@ def jobposting_metadata(html_text, expected_title=""):
     return {}
 
 
-def enrich_jobs(jobs, source, *, max_details=None, fetch_html=None):
+def enrich_jobs(jobs, source, *, max_details=None, fetch_html=None, stats=None):
     """Mutate only known posting fields and return count of enriched vacancies.
 
     Unknown posting date has priority, followed by recent listings with brief
@@ -170,7 +170,15 @@ def enrich_jobs(jobs, source, *, max_details=None, fetch_html=None):
                 updated = True
             if updated:
                 changed += 1
+        except urllib.error.HTTPError as exc:
+            # Access restrictions or rate limits must not trigger repeated
+            # detail requests to the same provider.
+            if exc.code in (401, 403, 429):
+                break
+            continue
         except (OSError, ValueError, urllib.error.URLError, UnicodeError):
             # Details are optional. The authoritative 14-day gate still applies.
             continue
+    if stats is not None:
+        stats["attempted"] = len(seen_urls)
     return changed
