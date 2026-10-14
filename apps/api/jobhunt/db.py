@@ -6,7 +6,7 @@ import os
 from typing import Optional, List, Dict, Any, Tuple
 from jobhunt.models import Job
 from jobhunt.classifier import classify_job
-from jobhunt.freshness import recent_posting
+from jobhunt.freshness import recent_posting, parse_posted_at
 
 class Database:
     def __init__(self, db_path: str = "data/jobs.db"):
@@ -401,6 +401,13 @@ class Database:
                 if posted_within_days != 14:
                     raise ValueError("Only the 14-day discovery window is supported")
                 jobs = [job for job in jobs if recent_posting(job.get("posted_at"))]
+                # Mixed pre-migration timestamp formats cannot be ordered by
+                # lexical SQLite comparisons. Sort by actual publication time.
+                jobs.sort(key=lambda job: (
+                    int(bool(job.get("is_new"))),
+                    parse_posted_at(job["posted_at"]).timestamp(),
+                    job["id"],
+                ), reverse=True)
                 if limit is not None:
                     start = max(0, int(offset))
                     jobs = jobs[start:start + max(1, min(int(limit), 100000))]
