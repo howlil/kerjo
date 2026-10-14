@@ -50,13 +50,23 @@ def parse_jobstreet_payload(data: dict) -> list[Job]:
         work_types = item.get("workTypes", [])
         work_type_str = ", ".join(work_types) if work_types else None
 
-        # Check remote
-        is_remote = False
         arrangements = (item.get("workArrangements") or {}).get("data", [])
+        labels = []
         for arr in arrangements:
-            lbl = (arr.get("label") or {}).get("text", "").lower()
-            if "remote" in lbl or "hybrid" in lbl:
-                is_remote = True
+            if not isinstance(arr, dict):
+                continue
+            label = arr.get("label") or ""
+            if isinstance(label, dict):
+                label = label.get("text") or ""
+            labels.append(str(label).lower())
+        # Keep remote and hybrid distinct. Never infer onsite from silence.
+        work_mode = (
+            "remote" if any("remote" in label for label in labels) else
+            "hybrid" if any("hybrid" in label for label in labels) else
+            "onsite" if any("onsite" in label or "on-site" in label for label in labels) else
+            "unknown"
+        )
+        is_remote = work_mode in ("remote", "hybrid")
 
         posted_at = item.get("listingDate")
         teaser = item.get("teaser") or ""
@@ -75,7 +85,7 @@ def parse_jobstreet_payload(data: dict) -> list[Job]:
                 salary=salary,
                 work_type=work_type_str,
                 is_remote=is_remote,
-                work_mode=("remote" if any("remote" in str(a).lower() for a in arrangements) else "hybrid" if any("hybrid" in str(a).lower() for a in arrangements) else "unknown"),
+                work_mode=work_mode,
                 posted_at=posted_at,
                 description=desc,
                 company_logo=company_logo,
