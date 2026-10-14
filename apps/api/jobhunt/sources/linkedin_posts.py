@@ -43,7 +43,7 @@ def valid_post_url(url):
 def application_link(url):
     if not isinstance(url, str) or len(url) > 2048:
         return None
-    url = url.strip().rstrip(".,;:!>)\\\'\\\"")
+    url = url.strip().rstrip(".,;:!>)")
     try:
         p = urllib.parse.urlsplit(url)
         host = (p.hostname or "").lower()
