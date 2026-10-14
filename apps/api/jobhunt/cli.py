@@ -36,9 +36,11 @@ def cmd_run(args, db: Database):
                     stat += f" ({r['error']})"
                 print(f"{r['source']:<12} | {r['keyword']:<18} | {r['found_count']:<6} | {r['new_count']:<5} | {stat}")
             print("=" * 65)
+            if any(r["status"] != "success" for r in results):
+                raise SystemExit(1)
     except LockAcquireError:
-        print("[!] Another jobhunt run is currently in progress. Exiting safely.")
-        sys.exit(0)
+        print("[!] Another jobhunt run is currently in progress. Skipping this attempt.")
+        sys.exit(75)
 
 def cmd_list(args, db: Database):
     jobs = db.get_jobs(
@@ -57,7 +59,7 @@ def cmd_list(args, db: Database):
         new_badge = "[NEW] " if j["is_new"] else "      "
         area_str = f"[{j['area'].replace('_', ' ').title()}]"
         src_str = f"[{j['source'].title()}]"
-        remote_str = " (Remote/Hybrid)" if j["is_remote"] else ""
+        remote_str = " (" + j["work_mode"].title() + ")" if j.get("work_mode") not in (None, "unknown") else ""
         print(f"{new_badge}{src_str:<12} {area_str:<20} {j['title']} @ {j['company']}{remote_str}")
         details = []
         if j["salary"]:
