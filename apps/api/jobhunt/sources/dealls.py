@@ -58,6 +58,7 @@ def parse_dealls_payload(data: dict) -> list[Job]:
         work_type = ", ".join(emp_types) if emp_types else None
 
         posted_at = item.get("publishedAt") or item.get("createdAt")
+        desc = (item.get("description") or item.get("jobDescription") or item.get("requirements") or "").strip()
 
         jobs.append(
             Job(
@@ -72,6 +73,7 @@ def parse_dealls_payload(data: dict) -> list[Job]:
                 work_type=work_type,
                 is_remote=is_remote,
                 posted_at=posted_at,
+                description=desc or None,
             )
         )
     return jobs

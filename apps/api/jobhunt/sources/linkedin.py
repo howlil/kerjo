@@ -55,6 +55,8 @@ def parse_linkedin_html(html_text: str) -> list[Job]:
         posted_at = time_m.group(1) if time_m else None
 
         is_remote = "remote" in title.lower() or "hybrid" in title.lower() or "remote" in loc_str.lower()
+        snippet_m = re.search(r'<div[^>]*base-search-card__metadata[^>]*>(.*?)</div>', card, re.S)
+        desc = re.sub(r'<[^>]+>', ' ', snippet_m.group(1)).strip() if snippet_m else None
 
         jobs.append(
             Job(
@@ -69,6 +71,7 @@ def parse_linkedin_html(html_text: str) -> list[Job]:
                 work_type=None,
                 is_remote=is_remote,
                 posted_at=posted_at,
+                description=desc,
             )
         )
 

@@ -50,6 +50,11 @@ def parse_tia_payload(data: dict) -> list[Job]:
         is_remote = bool(item.get("is_remote"))
         work_type = item.get("work_arrangement") or item.get("job_type")
         posted_at = item.get("published_at") or item.get("updated_at")
+        desc = (item.get("description") or "").strip()
+        exp_min = item.get("experience_min")
+        exp_max = item.get("experience_max")
+        if exp_min is not None or exp_max is not None:
+            desc = f"{desc}\nPengalaman {exp_min or 0} - {exp_max or exp_min} tahun.".strip()
 
         jobs.append(
             Job(
@@ -64,6 +69,7 @@ def parse_tia_payload(data: dict) -> list[Job]:
                 work_type=work_type,
                 is_remote=is_remote,
                 posted_at=posted_at,
+                description=desc or None,
             )
         )
     return jobs

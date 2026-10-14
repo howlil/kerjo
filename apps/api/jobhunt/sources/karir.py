@@ -40,6 +40,7 @@ def parse_karir_payload(data: dict) -> list[Job]:
             salary = f"Rp {s_low:,.0f}+".replace(",", ".")
 
         posted_at = item.get("posted_at") or item.get("updated_at")
+        desc = (item.get("description") or item.get("job_description") or "").strip()
 
         jobs.append(
             Job(
@@ -54,6 +55,7 @@ def parse_karir_payload(data: dict) -> list[Job]:
                 work_type=None,
                 is_remote=False,
                 posted_at=posted_at,
+                description=desc or None,
             )
         )
     return jobs

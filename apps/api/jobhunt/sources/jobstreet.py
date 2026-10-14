@@ -48,6 +48,9 @@ def parse_jobstreet_payload(data: dict) -> list[Job]:
                 is_remote = True
 
         posted_at = item.get("listingDate")
+        teaser = item.get("teaser") or ""
+        bullet_points = item.get("bulletPoints") or []
+        desc = (teaser + " " + " ".join(bullet_points)).strip() or None
 
         jobs.append(
             Job(
@@ -62,6 +65,7 @@ def parse_jobstreet_payload(data: dict) -> list[Job]:
                 work_type=work_type_str,
                 is_remote=is_remote,
                 posted_at=posted_at,
+                description=desc,
             )
         )
     return jobs

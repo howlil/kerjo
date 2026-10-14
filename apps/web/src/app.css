@@ -1,1 +1,122 @@
 @import "tailwindcss";
+
+:root {
+  color-scheme: light;
+  --color-page: #FEFEFE;
+  --color-surface: #F7F7F7;
+  --color-surface-muted: #F5F5F5;
+  --color-surface-hover: #F0F0F0;
+  --color-border-subtle: #EBEBEB;
+  --color-border: #D1D1D1;
+  --color-border-strong: #949494;
+  --color-text-heading: #121212;
+  --color-text-body: #202020;
+  --color-text-secondary: #626262;
+  --color-text-muted: #949494;
+  --color-accent: #9BB1FF;
+  --color-accent-soft: #EAF8FC;
+  --color-success: #ACE1AF;
+  --color-highlight: #FAFF7E;
+  --color-on-accent: #121212;
+
+  --font-body: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-heading: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+
+  --radius-sm: .375rem;
+  --radius-md: .625rem;
+  --radius-lg: .9rem;
+  --radius-pill: 9999px;
+
+  --control-border: #C8C8C8;
+  --control-highlight: rgba(255,255,255,.92);
+  --control-edge-bottom: rgba(18,18,18,.055);
+  --control-shadow: rgba(18,18,18,.06);
+  --control-surface-background:
+    radial-gradient(120% 100% at 50% -25%, rgba(255,255,255,.72) 0%, transparent 55%),
+    linear-gradient(180deg in oklab, #FEFEFE 0%, #F7F7F7 48%, #F5F5F5 100%);
+  --control-surface-hover-background:
+    radial-gradient(120% 100% at 50% -25%, rgba(255,255,255,.88) 0%, transparent 58%),
+    linear-gradient(180deg in oklab, #FEFEFE 0%, #F5F5F5 48%, #EAF8FC 100%);
+  --control-primary-background:
+    radial-gradient(120% 100% at 50% -30%, rgba(255,255,255,.24) 0%, transparent 58%),
+    linear-gradient(180deg in oklab, color-mix(in oklab, #9BB1FF 76%, #FEFEFE) 0%, #9BB1FF 50%, color-mix(in oklab, #9BB1FF 86%, #121212) 100%);
+}
+
+body {
+  margin: 0;
+  background-color: var(--color-page);
+  color: var(--color-text-body);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Pill grammar & tactile controls */
+.control-pill {
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius-pill);
+  background: var(--control-surface-background);
+  box-shadow: inset 0 1px 0 var(--control-highlight), inset 0 -1px 0 var(--control-edge-bottom), 0 1px 2px var(--control-shadow);
+  transition: filter .16s ease, transform .16s ease, color .16s ease, box-shadow .16s ease;
+}
+
+.control-pill:hover {
+  filter: brightness(1.015);
+  transform: translateY(-1px);
+}
+
+.control-pill-active {
+  border-color: color-mix(in oklab, #9BB1FF 72%, #121212);
+  background: var(--control-primary-background);
+  color: #121212;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.42), inset 0 -1px 0 rgba(18,18,18,.12), 0 1px 2px rgba(18,18,18,.16);
+}
+
+.ui-chip {
+  display: inline-flex;
+  min-height: 1.85rem;
+  align-items: center;
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius-pill);
+  background: var(--control-surface-background);
+  color: var(--color-text-secondary);
+  padding-inline: .65rem;
+  font-family: var(--font-mono);
+  font-size: .75rem;
+  line-height: 1rem;
+  box-shadow: inset 0 1px 0 var(--control-highlight), inset 0 -1px 0 var(--control-edge-bottom), 0 1px 2px var(--control-shadow);
+  transition: filter .16s ease, transform .16s ease, color .16s ease, border-color .16s ease;
+  cursor: pointer;
+  user-select: none;
+}
+
+.ui-chip:hover {
+  color: var(--color-text-heading);
+  border-color: var(--color-border-strong);
+  filter: brightness(1.02);
+}
+
+.ui-chip-active {
+  border-color: color-mix(in oklab, #9BB1FF 75%, #121212);
+  background: var(--control-primary-background);
+  color: #121212;
+  font-weight: 500;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.45), inset 0 -1px 0 rgba(18,18,18,.12), 0 1px 2px rgba(18,18,18,.16);
+}
+
+/* Custom scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  border-radius: 9999px;
+  background: var(--color-border);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-border-strong);
+}

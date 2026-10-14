@@ -65,5 +65,47 @@ class TestDatabase(unittest.TestCase):
         searches_after = self.db.get_searches(active_only=True)
         self.assertEqual(len(searches_after), 0)
 
+    def test_experience_and_category_filtering(self):
+        j_junior = Job(
+            source="kalibrr",
+            external_id="j1",
+            title="Junior Frontend Engineer",
+            company="Startup",
+            location_raw="Jakarta",
+            area="unspecified",
+            url="https://kalibrr.com/j1",
+            description="Fresh graduate are welcome. 0-1 tahun pengalaman.",
+        )
+        j_senior = Job(
+            source="linkedin",
+            external_id="j2",
+            title="Senior Backend Engineer",
+            company="BigTech",
+            location_raw="Jakarta Selatan",
+            area="jakarta_selatan",
+            url="https://linkedin.com/j2",
+            description="Minimal 5 tahun pengalaman di arsitektur microservices.",
+        )
+        self.db.upsert_jobs([j_junior, j_senior])
+
+        # Query all
+        all_jobs = self.db.get_jobs()
+        self.assertEqual(len(all_jobs), 2)
+
+        # Query entry level only
+        entry_jobs = self.db.get_jobs(experience_level="entry")
+        self.assertEqual(len(entry_jobs), 1)
+        self.assertEqual(entry_jobs[0]["title"], "Junior Frontend Engineer")
+
+        # Query senior level only
+        senior_jobs = self.db.get_jobs(experience_level="senior")
+        self.assertEqual(len(senior_jobs), 1)
+        self.assertEqual(senior_jobs[0]["title"], "Senior Backend Engineer")
+
+        # Query by role category
+        fe_jobs = self.db.get_jobs(role_category="frontend")
+        self.assertEqual(len(fe_jobs), 1)
+        self.assertEqual(fe_jobs[0]["title"], "Junior Frontend Engineer")
+
 if __name__ == "__main__":
     unittest.main()

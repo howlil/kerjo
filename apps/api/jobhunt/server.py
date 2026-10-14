@@ -51,6 +51,8 @@ class JobhuntRequestHandler(http.server.BaseHTTPRequestHandler):
             source = query.get("source", [None])[0]
             is_new = query.get("is_new", ["0"])[0] in ("1", "true")
             q = query.get("q", [None])[0]
+            exp_level = query.get("experience_level", [None])[0]
+            role_cat = query.get("role_category", [None])[0]
             limit = int(query.get("limit", ["100"])[0])
             offset = int(query.get("offset", ["0"])[0])
             dedup_param = query.get("dedup", ["1"])[0]
@@ -62,6 +64,8 @@ class JobhuntRequestHandler(http.server.BaseHTTPRequestHandler):
                 source=source,
                 is_new_only=is_new,
                 query_text=q,
+                experience_level=exp_level,
+                role_category=role_cat,
                 limit=fetch_limit,
                 offset=offset,
             )

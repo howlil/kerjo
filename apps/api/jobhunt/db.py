@@ -3,6 +3,7 @@ import datetime
 import json
 from typing import Optional, List, Dict, Any, Tuple
 from jobhunt.models import Job
+from jobhunt.classifier import classify_job
 
 class Database:
     def __init__(self, db_path: str = "data/jobs.db"):
@@ -23,7 +24,7 @@ class Database:
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     keyword TEXT NOT NULL,
                     area TEXT NOT NULL DEFAULT 'all',
-                    sources TEXT NOT NULL DEFAULT 'jobstreet,kalibrr,linkedin,glints,dealls',
+                    sources TEXT NOT NULL DEFAULT 'jobstreet,kalibrr,linkedin,glints,dealls,karir,techinasia',
                     is_active INTEGER NOT NULL DEFAULT 1,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
@@ -42,6 +43,12 @@ class Database:
                     work_type TEXT,
                     is_remote INTEGER NOT NULL DEFAULT 0,
                     posted_at TEXT,
+                    description TEXT,
+                    experience_level TEXT DEFAULT 'unspecified',
+                    min_years REAL,
+                    max_years REAL,
+                    experience_raw TEXT,
+                    role_category TEXT DEFAULT 'other',
                     is_new INTEGER NOT NULL DEFAULT 1,
                     first_seen_at TEXT NOT NULL,
                     last_seen_at TEXT NOT NULL,
@@ -52,6 +59,8 @@ class Database:
                 CREATE INDEX IF NOT EXISTS idx_jobs_area ON jobs(area);
                 CREATE INDEX IF NOT EXISTS idx_jobs_is_new ON jobs(is_new);
                 CREATE INDEX IF NOT EXISTS idx_jobs_posted_at ON jobs(posted_at);
+                CREATE INDEX IF NOT EXISTS idx_jobs_exp_level ON jobs(experience_level);
+                CREATE INDEX IF NOT EXISTS idx_jobs_role_cat ON jobs(role_category);
 
                 CREATE TABLE IF NOT EXISTS job_runs (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -65,6 +74,23 @@ class Database:
                     FOREIGN KEY(search_id) REFERENCES searches(id) ON DELETE SET NULL
                 );
             """)
+
+            # Safe migration for existing databases
+            existing_cols = {row["name"] for row in conn.execute("PRAGMA table_info(jobs)").fetchall()}
+            migrations = [
+                ("description", "TEXT"),
+                ("experience_level", "TEXT DEFAULT 'unspecified'"),
+                ("min_years", "REAL"),
+                ("max_years", "REAL"),
+                ("experience_raw", "TEXT"),
+                ("role_category", "TEXT DEFAULT 'other'"),
+            ]
+            for col_name, col_def in migrations:
+                if col_name not in existing_cols:
+                    try:
+                        conn.execute(f"ALTER TABLE jobs ADD COLUMN {col_name} {col_def}")
+                    except sqlite3.OperationalError:
+                        pass
 
     # ---------------- Search Queries ----------------
     def create_search(self, keyword: str, area: str = "all", sources: Optional[List[str]] = None) -> int:
@@ -116,6 +142,15 @@ class Database:
 
         with self._get_connection() as conn:
             for job in jobs:
+                # Classify if not yet assigned
+                if not job.experience_level or job.experience_level == "unspecified":
+                    cl = classify_job(job.title, job.description)
+                    job.experience_level = cl["experience_level"]
+                    job.min_years = cl["min_years"]
+                    job.max_years = cl["max_years"]
+                    job.experience_raw = cl["experience_raw"]
+                    job.role_category = cl["role_category"]
+
                 # Check if exists
                 existing = conn.execute(
                     "SELECT id, is_new FROM jobs WHERE source = ? AND external_id = ?",
@@ -136,6 +171,12 @@ class Database:
                             work_type = COALESCE(?, work_type),
                             is_remote = ?,
                             posted_at = COALESCE(?, posted_at),
+                            description = COALESCE(?, description),
+                            experience_level = COALESCE(?, experience_level),
+                            min_years = COALESCE(?, min_years),
+                            max_years = COALESCE(?, max_years),
+                            experience_raw = COALESCE(?, experience_raw),
+                            role_category = COALESCE(?, role_category),
                             last_seen_at = ?
                         WHERE id = ?
                         """,
@@ -149,6 +190,12 @@ class Database:
                             job.work_type,
                             1 if job.is_remote else 0,
                             job.posted_at,
+                            job.description,
+                            job.experience_level,
+                            job.min_years,
+                            job.max_years,
+                            job.experience_raw,
+                            job.role_category,
                             now,
                             existing["id"],
                         ),
@@ -159,9 +206,10 @@ class Database:
                         """
                         INSERT INTO jobs (
                             source, external_id, title, company, location_raw, area, url,
-                            salary, work_type, is_remote, posted_at, is_new,
-                            first_seen_at, last_seen_at
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+                            salary, work_type, is_remote, posted_at, description,
+                            experience_level, min_years, max_years, experience_raw, role_category,
+                            is_new, first_seen_at, last_seen_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
                         """,
                         (
                             job.source,
@@ -175,6 +223,12 @@ class Database:
                             job.work_type,
                             1 if job.is_remote else 0,
                             job.posted_at,
+                            job.description,
+                            job.experience_level,
+                            job.min_years,
+                            job.max_years,
+                            job.experience_raw,
+                            job.role_category,
                             now,
                             now,
                         ),
@@ -196,6 +250,8 @@ class Database:
         source: Optional[str] = None,
         is_new_only: bool = False,
         query_text: Optional[str] = None,
+        experience_level: Optional[str] = None,
+        role_category: Optional[str] = None,
         limit: int = 100,
         offset: int = 0,
     ) -> List[Dict[str, Any]]:
@@ -213,10 +269,24 @@ class Database:
         if is_new_only:
             sql += " AND is_new = 1"
 
+        if experience_level and experience_level != "all":
+            if experience_level == "entry":
+                sql += " AND (experience_level = 'entry' OR (min_years IS NOT NULL AND min_years <= 1))"
+            elif experience_level == "mid":
+                sql += " AND (experience_level = 'mid' OR (min_years IS NOT NULL AND min_years >= 1 AND min_years <= 3))"
+            elif experience_level == "senior":
+                sql += " AND (experience_level = 'senior' OR (min_years IS NOT NULL AND min_years >= 3))"
+            elif experience_level == "unspecified":
+                sql += " AND (experience_level = 'unspecified' OR experience_level IS NULL)"
+
+        if role_category and role_category != "all":
+            sql += " AND role_category = ?"
+            params.append(role_category)
+
         if query_text:
-            sql += " AND (title LIKE ? OR company LIKE ? OR location_raw LIKE ?)"
+            sql += " AND (title LIKE ? OR company LIKE ? OR location_raw LIKE ? OR description LIKE ?)"
             pat = f"%{query_text}%"
-            params.extend([pat, pat, pat])
+            params.extend([pat, pat, pat, pat])
 
         sql += " ORDER BY is_new DESC, COALESCE(posted_at, first_seen_at) DESC LIMIT ? OFFSET ?"
         params.extend([limit, offset])

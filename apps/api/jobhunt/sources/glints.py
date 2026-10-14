@@ -62,6 +62,11 @@ def parse_glints_payload(data: dict) -> list[Job]:
         work_type = item.get("type")
 
         posted_at = item.get("createdAt")
+        desc = (item.get("briefJobDescription") or item.get("description") or "").strip()
+        min_exp = item.get("minYearsOfExperience")
+        max_exp = item.get("maxYearsOfExperience")
+        if min_exp is not None or max_exp is not None:
+            desc = f"{desc}\nPengalaman {min_exp or 0} - {max_exp or min_exp} tahun.".strip()
 
         jobs.append(
             Job(
@@ -76,6 +81,7 @@ def parse_glints_payload(data: dict) -> list[Job]:
                 work_type=work_type,
                 is_remote=is_remote,
                 posted_at=posted_at,
+                description=desc or None,
             )
         )
     return jobs

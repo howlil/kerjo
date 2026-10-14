@@ -14,6 +14,12 @@ class Job:
     work_type: Optional[str] = None
     is_remote: bool = False
     posted_at: Optional[str] = None
+    description: Optional[str] = None
+    experience_level: Optional[str] = None
+    min_years: Optional[float] = None
+    max_years: Optional[float] = None
+    experience_raw: Optional[str] = None
+    role_category: Optional[str] = None
 
     def to_dict(self):
         return asdict(self)

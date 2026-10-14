@@ -1,20 +1,25 @@
 <script>
   import { onMount } from 'svelte';
+  import Icon from './components/Icon.svelte';
+  import Timeline from './components/Timeline.svelte';
 
-  // State
+  // Core State
   let jobs = $state([]);
   let searches = $state([]);
   let latestRuns = $state([]);
   let loading = $state(false);
   let runningScraper = $state(false);
+  let activeJob = $state(null);
 
-  // Filters
+  // Filters State
   let selectedArea = $state('all');
+  let selectedRole = $state('all');
+  let selectedExperience = $state('all');
   let selectedSource = $state('all');
   let onlyNew = $state(false);
   let searchQuery = $state('');
 
-  // Add search form modal
+  // Add search modal
   let showAddSearch = $state(false);
   let newKeyword = $state('');
   let newArea = $state('all');
@@ -36,32 +41,60 @@
     { id: 'tangerang_selatan', label: 'Tangerang Selatan' },
     { id: 'bsd', label: 'BSD' },
     { id: 'alam_sutera', label: 'Alam Sutera' },
-    { id: 'unspecified', label: 'Tidak Spesifik (Jakarta/Tng)' },
+    { id: 'unspecified', label: 'Jakarta / Tangerang (Umum)' },
   ];
 
-  const sourceColors = {
-    jobstreet: 'bg-purple-100 text-purple-800 border-purple-200',
-    kalibrr: 'bg-amber-100 text-amber-800 border-amber-200',
-    linkedin: 'bg-sky-100 text-sky-800 border-sky-200',
-    glints: 'bg-emerald-100 text-emerald-800 border-emerald-200',
-    dealls: 'bg-rose-100 text-rose-800 border-rose-200',
-    karir: 'bg-orange-100 text-orange-800 border-orange-200',
-    techinasia: 'bg-red-100 text-red-800 border-red-200'
-  };
+  const roleCategories = [
+    { id: 'all', label: 'Semua Role' },
+    { id: 'software_engineer', label: 'Software Engineer' },
+    { id: 'backend', label: 'Backend' },
+    { id: 'frontend', label: 'Frontend' },
+    { id: 'fullstack', label: 'Fullstack' },
+    { id: 'mobile', label: 'Mobile' },
+    { id: 'devops', label: 'DevOps / Cloud' },
+    { id: 'qa', label: 'QA / Testing' },
+    { id: 'data', label: 'Data / AI' },
+  ];
+
+  const experienceLevels = [
+    { id: 'all', label: 'Semua Level' },
+    { id: 'entry', label: 'Entry Level (0-1 / 0-2 th)' },
+    { id: 'mid', label: 'Mid Level (Min 1-2 th)' },
+    { id: 'senior', label: 'Senior (>3 / >5 th / Lead)' },
+  ];
+
+  const platforms = [
+    { id: 'all', label: 'Semua Situs' },
+    { id: 'jobstreet', label: 'JobStreet' },
+    { id: 'kalibrr', label: 'Kalibrr' },
+    { id: 'linkedin', label: 'LinkedIn' },
+    { id: 'glints', label: 'Glints' },
+    { id: 'dealls', label: 'Dealls' },
+    { id: 'karir', label: 'Karir.com' },
+    { id: 'techinasia', label: 'Tech in Asia' },
+  ];
 
   async function loadJobs() {
     loading = true;
     try {
       const params = new URLSearchParams();
       if (selectedArea !== 'all') params.set('area', selectedArea);
+      if (selectedRole !== 'all') params.set('role_category', selectedRole);
+      if (selectedExperience !== 'all') params.set('experience_level', selectedExperience);
       if (selectedSource !== 'all') params.set('source', selectedSource);
       if (onlyNew) params.set('is_new', '1');
       if (searchQuery.trim()) params.set('q', searchQuery.trim());
-      params.set('limit', '200');
+      params.set('limit', '250');
 
       const res = await fetch(`/api/jobs?${params.toString()}`);
       const data = await res.json();
       jobs = data.jobs || [];
+
+      // Update activeJob reference if still in the list
+      if (activeJob) {
+        const found = jobs.find(j => j.id === activeJob.id);
+        if (found) activeJob = found;
+      }
     } catch (e) {
       console.error('Error loading jobs:', e);
     } finally {
@@ -93,7 +126,7 @@
     if (runningScraper) return;
     runningScraper = true;
     try {
-      const res = await fetch('/api/run', {
+      await fetch('/api/run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({})
@@ -104,6 +137,13 @@
       alert('Gagal menjalankan scraper: ' + e);
     } finally {
       runningScraper = false;
+    }
+  }
+
+  function selectJob(job) {
+    activeJob = job;
+    if (job && job.is_new) {
+      markJobSeen(job);
     }
   }
 
@@ -167,6 +207,7 @@
       newKeyword = '';
       showAddSearch = false;
       await loadSearches();
+      await loadJobs();
     } catch (e) {
       alert('Gagal menyimpan pencarian: ' + e);
     }
@@ -176,10 +217,38 @@
     if (!isoStr) return '-';
     try {
       const d = new Date(isoStr);
-      return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + ' ' + d.toLocaleDateString([], { day: 'numeric', month: 'short' });
+      return d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
     } catch {
       return isoStr;
     }
+  }
+
+  function formatArea(areaStr) {
+    if (!areaStr) return 'Lokasi Umum';
+    return areaStr.replace(/_/g, ' ').toUpperCase();
+  }
+
+  function formatRole(roleStr) {
+    if (!roleStr || roleStr === 'unspecified') return 'Engineer';
+    return roleStr.replace(/_/g, ' ').toUpperCase();
+  }
+
+  function formatExp(job) {
+    if (job.experience_raw) return job.experience_raw;
+    if (job.experience_level === 'entry') return '0-2 Tahun / Entry';
+    if (job.experience_level === 'mid') return 'Min 1-2 Tahun';
+    if (job.experience_level === 'senior') return '>3 Tahun / Senior';
+    return 'Pengalaman Fleksibel';
+  }
+
+  function resetAllFilters() {
+    selectedArea = 'all';
+    selectedRole = 'all';
+    selectedExperience = 'all';
+    selectedSource = 'all';
+    onlyNew = false;
+    searchQuery = '';
+    loadJobs();
   }
 
   onMount(() => {
@@ -189,296 +258,603 @@
   });
 </script>
 
-<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-  <!-- Top Navigation & Actions -->
-  <header class="flex flex-col md:flex-row md:items-center md:justify-between pb-6 border-b border-slate-200 gap-4">
-    <div>
+<div class="min-h-screen bg-[var(--color-page)] flex flex-col text-[var(--color-text-body)]">
+  <!-- Top Navbar -->
+  <header class="sticky top-0 z-40 bg-[var(--color-page)]/95 backdrop-blur-md border-b border-[var(--color-border-subtle)] px-4 sm:px-6 py-3">
+    <div class="max-w-[1800px] mx-auto flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+      <!-- Brand & Status -->
       <div class="flex items-center gap-3">
-        <h1 class="text-2xl font-bold tracking-tight text-slate-900 flex items-center gap-2">
-          <span class="bg-indigo-600 text-white p-1.5 rounded-lg text-lg">⚡</span>
-          Jobhunt
-        </h1>
-        <span class="text-xs px-2.5 py-0.5 rounded-full font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1.5">
-          <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-          Auto-run tiap jam
-        </span>
+        <a href="/" class="flex items-center gap-2 group text-decoration-none">
+          <span class="w-8 h-8 rounded-full bg-[var(--color-accent)] text-[#121212] flex items-center justify-center font-bold text-sm shadow-xs transition group-hover:scale-105">
+            <Icon name="briefcase" size={16} />
+          </span>
+          <span class="text-lg font-semibold tracking-tight text-[var(--color-text-heading)]">
+            JobHunt
+          </span>
+        </a>
+
+        <div class="h-4 w-[1px] bg-[var(--color-border)] hidden sm:block"></div>
+
+        <div class="hidden sm:flex items-center gap-2">
+          <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-mono border border-[#ACE1AF]/60 bg-[#ACE1AF]/15 text-[#121212]">
+            <span class="w-2 h-2 rounded-full bg-[#ACE1AF] animate-pulse"></span>
+            Cronjob Tiap Jam Aktif
+          </span>
+          <span class="text-xs text-[var(--color-text-muted)] font-mono hidden xl:inline">
+            Jabodetabek & BSD / Alsut
+          </span>
+        </div>
       </div>
-      <p class="text-sm text-slate-500 mt-1">
-        Aggregator lowongan kerja lokal (JobStreet, Kalibrr, LinkedIn, Glints, Dealls, Karir.com, Tech in Asia)
-      </p>
-    </div>
 
-    <div class="flex flex-wrap items-center gap-2.5">
-      <button
-        onclick={markAllSeen}
-        class="text-xs font-medium px-3 py-2 rounded-lg bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 transition shadow-xs"
-      >
-        ✓ Tandai Semua Dilihat
-      </button>
+      <!-- Action Controls -->
+      <div class="flex items-center gap-2">
+        <button
+          onclick={markAllSeen}
+          class="control-pill px-3 py-1.5 text-xs text-[var(--color-text-secondary)] hover:text-[var(--color-text-heading)] flex items-center gap-1.5 cursor-pointer"
+          title="Tandai semua lowongan sebagai sudah dilihat"
+        >
+          <Icon name="checkCircle" size={13} />
+          <span>Tandai Dilihat</span>
+        </button>
 
-      <button
-        onclick={() => (showAddSearch = true)}
-        class="text-xs font-medium px-3.5 py-2 rounded-lg bg-white border border-indigo-200 text-indigo-700 hover:bg-indigo-50 transition shadow-xs"
-      >
-        + Simpan Pencarian
-      </button>
+        <button
+          onclick={() => (showAddSearch = true)}
+          class="control-pill px-3 py-1.5 text-xs text-[var(--color-text-secondary)] hover:text-[var(--color-text-heading)] flex items-center gap-1.5 cursor-pointer"
+        >
+          <Icon name="plus" size={13} />
+          <span>Simpan Posisi</span>
+        </button>
 
-      <button
-        onclick={triggerRun}
-        disabled={runningScraper}
-        class="text-xs font-semibold px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white transition shadow-sm disabled:opacity-60 flex items-center gap-2"
-      >
-        {#if runningScraper}
-          <span class="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
-          Mengambil data...
-        {:else}
-          ↻ Run Sekarang
-        {/if}
-      </button>
+        <button
+          onclick={triggerRun}
+          disabled={runningScraper}
+          class="control-pill control-pill-active px-3.5 py-1.5 text-xs font-medium flex items-center gap-1.5 cursor-pointer disabled:opacity-60"
+        >
+          {#if runningScraper}
+            <span class="w-3 h-3 border-2 border-[#121212]/30 border-t-[#121212] rounded-full animate-spin"></span>
+            <span>Scraping...</span>
+          {:else}
+            <Icon name="refresh" size={13} />
+            <span>Scrape Sekarang</span>
+          {/if}
+        </button>
+      </div>
     </div>
   </header>
 
-  <!-- Saved Searches Quick Bar -->
-  <section class="mt-6 p-4 bg-white rounded-xl border border-slate-200 shadow-xs">
-    <div class="flex items-center justify-between mb-3">
-      <h2 class="text-xs font-bold uppercase tracking-wider text-slate-500">Pencarian Tersimpan (Dijalankan Tiap Jam)</h2>
-      <span class="text-xs text-slate-400">{searches.length} pencarian aktif</span>
-    </div>
+  <!-- 3-Column Layout: Sidebar Filter : Main Component : Sidebar Detail -->
+  <!-- Ratio: 1:5 (when no card selected), 1:4:1 (when card clicked) -->
+  <div class="max-w-[1800px] w-full mx-auto px-4 sm:px-6 py-4 flex-1">
+    <div class="grid grid-cols-1 lg:grid-cols-6 gap-5 items-start">
 
-    {#if searches.length === 0}
-      <div class="text-xs text-slate-500 py-2">
-        Belum ada pencarian tersimpan. Klik "+ Simpan Pencarian" untuk mulai mengotomasi scraping tiap jam.
-      </div>
-    {:else}
-      <div class="flex flex-wrap gap-2">
-        {#each searches as s}
-          <div class="inline-flex items-center gap-2 text-xs px-3 py-1.5 rounded-lg border {s.is_active ? 'bg-slate-50 border-slate-300 text-slate-800' : 'bg-slate-100 border-dashed border-slate-300 text-slate-400 opacity-60'}">
-            <button
-              onclick={() => toggleSearch(s.id)}
-              class="w-2.5 h-2.5 rounded-full {s.is_active ? 'bg-emerald-500' : 'bg-slate-300'}"
-              title={s.is_active ? 'Klik untuk non-aktifkan' : 'Klik untuk aktifkan'}
-            ></button>
-            <span class="font-medium">{s.keyword}</span>
-            <span class="text-[10px] text-slate-500">({s.area})</span>
-            <button
-              onclick={() => deleteSearch(s.id)}
-              class="hover:text-red-500 ml-1 text-slate-400"
-              title="Hapus"
-            >✕</button>
+      <!-- ========================================== -->
+      <!-- COLUMN 1: SIDEBAR FILTER (1 part)          -->
+      <!-- ========================================== -->
+      <aside class="lg:col-span-1 space-y-5 bg-[var(--color-surface)] p-4 rounded-2xl border border-[var(--color-border-subtle)]">
+        <div class="flex items-center justify-between pb-2 border-b border-[var(--color-border-subtle)]">
+          <div class="flex items-center gap-1.5 text-xs font-semibold text-[var(--color-text-heading)]">
+            <Icon name="filter" size={14} />
+            <span>Filter Pencarian</span>
           </div>
-        {/each}
-      </div>
-    {/if}
-  </section>
+          {#if selectedRole !== 'all' || selectedExperience !== 'all' || selectedArea !== 'all' || selectedSource !== 'all' || onlyNew || searchQuery}
+            <button
+              onclick={resetAllFilters}
+              class="text-[11px] text-[var(--color-text-muted)] hover:text-[var(--color-text-heading)] cursor-pointer flex items-center gap-0.5"
+            >
+              Reset
+            </button>
+          {/if}
+        </div>
 
-  <!-- Filters Row -->
-  <section class="mt-6 flex flex-col md:flex-row gap-3 items-stretch md:items-center justify-between">
-    <div class="flex flex-wrap gap-2 items-center">
-      <!-- Area selector -->
-      <select
-        bind:value={selectedArea}
-        onchange={loadJobs}
-        class="text-xs font-medium px-3 py-2 rounded-lg bg-white border border-slate-300 text-slate-700 shadow-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none"
-      >
-        {#each areas as a}
-          <option value={a.id}>{a.label}</option>
-        {/each}
-      </select>
+        <!-- Filter: Role Category -->
+        <div class="space-y-1.5">
+          <span class="block text-[11px] font-mono uppercase tracking-wider text-[var(--color-text-muted)]">
+            Kategori Role
+          </span>
+          <div class="space-y-1">
+            {#each roleCategories as r}
+              <button
+                onclick={() => { selectedRole = r.id; loadJobs(); }}
+                class="w-full text-left px-2.5 py-1.5 rounded-full text-xs transition flex items-center justify-between cursor-pointer {selectedRole === r.id ? 'bg-[var(--color-accent)] text-[#121212] font-semibold shadow-2xs' : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-hover)]'}"
+              >
+                <span>{r.label}</span>
+                {#if selectedRole === r.id}
+                  <Icon name="check" size={12} />
+                {/if}
+              </button>
+            {/each}
+          </div>
+        </div>
 
-      <!-- Source selector -->
-      <select
-        bind:value={selectedSource}
-        onchange={loadJobs}
-        class="text-xs font-medium px-3 py-2 rounded-lg bg-white border border-slate-300 text-slate-700 shadow-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none"
-      >
-        <option value="all">Semua Situs</option>
-        <option value="jobstreet">JobStreet</option>
-        <option value="kalibrr">Kalibrr</option>
-        <option value="linkedin">LinkedIn</option>
-        <option value="glints">Glints</option>
-        <option value="dealls">Dealls</option>
-        <option value="karir">Karir.com</option>
-        <option value="techinasia">Tech in Asia</option>
-      </select>
+        <!-- Filter: Experience Bracket -->
+        <div class="space-y-1.5 pt-2 border-t border-[var(--color-border-subtle)]">
+          <span class="block text-[11px] font-mono uppercase tracking-wider text-[var(--color-text-muted)]">
+            Pengalaman
+          </span>
+          <div class="space-y-1">
+            {#each experienceLevels as exp}
+              <button
+                onclick={() => { selectedExperience = exp.id; loadJobs(); }}
+                class="w-full text-left px-2.5 py-1.5 rounded-full text-xs transition flex items-center justify-between cursor-pointer {selectedExperience === exp.id ? 'bg-[var(--color-accent)] text-[#121212] font-semibold shadow-2xs' : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-hover)]'}"
+              >
+                <span>{exp.label}</span>
+                {#if selectedExperience === exp.id}
+                  <Icon name="check" size={12} />
+                {/if}
+              </button>
+            {/each}
+          </div>
+        </div>
 
-      <!-- Only NEW toggle -->
-      <button
-        onclick={() => { onlyNew = !onlyNew; loadJobs(); }}
-        class="text-xs font-medium px-3 py-2 rounded-lg border transition shadow-xs flex items-center gap-1.5 {onlyNew ? 'bg-amber-50 border-amber-300 text-amber-900 font-semibold' : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50'}"
-      >
-        <span>🔥</span>
-        Hanya yang NEW
-      </button>
-    </div>
-
-    <!-- Search Text filter -->
-    <div class="relative min-w-[240px]">
-      <input
-        type="text"
-        placeholder="Filter judul / perusahaan..."
-        bind:value={searchQuery}
-        oninput={loadJobs}
-        class="w-full text-xs px-3 py-2 pl-8 rounded-lg bg-white border border-slate-300 text-slate-800 placeholder-slate-400 shadow-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none"
-      />
-      <span class="absolute left-2.5 top-2 text-slate-400 text-xs">🔍</span>
-    </div>
-  </section>
-
-  <!-- Job Cards List -->
-  <main class="mt-6">
-    <div class="flex items-center justify-between pb-3">
-      <span class="text-xs font-semibold text-slate-600">
-        Menampilkan {jobs.length} lowongan
-      </span>
-      {#if loading}
-        <span class="text-xs text-indigo-600 flex items-center gap-1.5">
-          <span class="w-2.5 h-2.5 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin"></span>
-          Memuat...
-        </span>
-      {/if}
-    </div>
-
-    {#if jobs.length === 0 && !loading}
-      <div class="text-center py-16 bg-white rounded-2xl border border-slate-200">
-        <p class="text-slate-400 text-3xl mb-2">📋</p>
-        <p class="text-sm font-semibold text-slate-700">Tidak ada lowongan yang sesuai kriteria.</p>
-        <p class="text-xs text-slate-400 mt-1">Coba ubah filter area atau klik "Run Sekarang" untuk mengambil data terbaru.</p>
-      </div>
-    {:else}
-      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {#each jobs as j}
-          <div
-            class="bg-white rounded-xl border p-4 shadow-xs hover:shadow-md transition flex flex-col justify-between relative group {j.is_new ? 'border-amber-400 ring-2 ring-amber-400/20' : 'border-slate-200'}"
+        <!-- Filter: Area -->
+        <div class="space-y-1.5 pt-2 border-t border-[var(--color-border-subtle)]">
+          <label for="filter-area-select" class="block text-[11px] font-mono uppercase tracking-wider text-[var(--color-text-muted)]">
+            Area Lokasi
+          </label>
+          <select
+            id="filter-area-select"
+            bind:value={selectedArea}
+            onchange={loadJobs}
+            class="w-full text-xs px-2.5 py-2 rounded-xl bg-[var(--color-page)] border border-[var(--color-border)] text-[var(--color-text-heading)] focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)] cursor-pointer"
           >
-            <div>
-              <!-- Badges -->
-              <div class="flex flex-wrap items-center gap-1.5 mb-2.5">
-                {#if j.is_new}
-                  <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500 text-white uppercase tracking-wider shadow-2xs">
-                    NEW
-                  </span>
-                {/if}
+            {#each areas as a}
+              <option value={a.id}>{a.label}</option>
+            {/each}
+          </select>
+        </div>
 
-                {#if j.sources && j.sources.length > 1}
-                  <span class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-200">
-                    {j.sources.length} SITUS
-                  </span>
-                  {#each j.sources as src}
-                    <span class="text-[10px] font-semibold px-2 py-0.5 rounded-full border {sourceColors[src] || 'bg-slate-100 text-slate-700'}">
-                      {src.toUpperCase()}
+        <!-- Filter: Source Platform -->
+        <div class="space-y-1.5 pt-2 border-t border-[var(--color-border-subtle)]">
+          <label for="filter-source-select" class="block text-[11px] font-mono uppercase tracking-wider text-[var(--color-text-muted)]">
+            Platform Portal
+          </label>
+          <select
+            id="filter-source-select"
+            bind:value={selectedSource}
+            onchange={loadJobs}
+            class="w-full text-xs px-2.5 py-2 rounded-xl bg-[var(--color-page)] border border-[var(--color-border)] text-[var(--color-text-heading)] focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)] cursor-pointer"
+          >
+            {#each platforms as p}
+              <option value={p.id}>{p.label}</option>
+            {/each}
+          </select>
+        </div>
+
+        <!-- Filter: Only NEW -->
+        <div class="pt-2 border-t border-[var(--color-border-subtle)]">
+          <button
+            onclick={() => { onlyNew = !onlyNew; loadJobs(); }}
+            class="w-full ui-chip justify-between {onlyNew ? 'ui-chip-active' : ''}"
+          >
+            <span class="flex items-center gap-1.5">
+              <span class="w-2 h-2 rounded-full {onlyNew ? 'bg-[#121212]' : 'bg-[#ACE1AF]'}"></span>
+              <span>Hanya Baru (NEW)</span>
+            </span>
+            {#if onlyNew}
+              <Icon name="check" size={12} />
+            {/if}
+          </button>
+        </div>
+
+        <!-- Saved Searches Widget -->
+        <div class="pt-3 border-t border-[var(--color-border-subtle)] space-y-2">
+          <div class="flex items-center justify-between">
+            <span class="text-[11px] font-mono uppercase tracking-wider text-[var(--color-text-muted)]">
+              Auto-Search ({searches.length})
+            </span>
+            <button
+              onclick={() => (showAddSearch = true)}
+              class="text-[11px] text-[var(--color-text-secondary)] hover:text-[var(--color-text-heading)] cursor-pointer"
+              title="Tambah Posisi"
+            >
+              <Icon name="plus" size={12} />
+            </button>
+          </div>
+
+          {#if searches.length === 0}
+            <p class="text-[11px] text-[var(--color-text-muted)] leading-relaxed">
+              Belum ada posisi tersimpan untuk cronjob tiap jam.
+            </p>
+          {:else}
+            <div class="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+              {#each searches as s}
+                <div class="flex items-center justify-between gap-1 text-xs px-2.5 py-1.5 rounded-lg border border-[var(--color-border-subtle)] bg-[var(--color-page)] {s.is_active ? '' : 'opacity-50'}">
+                  <button
+                    onclick={() => toggleSearch(s.id)}
+                    class="flex items-center gap-1.5 truncate text-left cursor-pointer flex-1"
+                    title={s.is_active ? 'Status aktif. Klik untuk jeda' : 'Status dijeda. Klik untuk aktifkan'}
+                  >
+                    <span class="w-1.5 h-1.5 rounded-full shrink-0 {s.is_active ? 'bg-[#ACE1AF]' : 'bg-[var(--color-border-strong)]'}"></span>
+                    <span class="font-medium text-[var(--color-text-heading)] truncate text-[11px]">{s.keyword}</span>
+                  </button>
+                  <button
+                    onclick={() => deleteSearch(s.id)}
+                    class="text-[var(--color-text-muted)] hover:text-red-600 cursor-pointer p-0.5 shrink-0"
+                    title="Hapus"
+                  >
+                    <Icon name="trash" size={11} />
+                  </button>
+                </div>
+              {/each}
+            </div>
+          {/if}
+        </div>
+      </aside>
+
+      <!-- ======================================================== -->
+      <!-- COLUMN 2: MAIN COMPONENT (5 parts default, 4 when open)  -->
+      <!-- ======================================================== -->
+      <main class="{activeJob ? 'lg:col-span-4' : 'lg:col-span-5'} space-y-4">
+        <!-- Top Search Bar & Counter -->
+        <div class="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-[var(--color-surface)] p-2.5 rounded-2xl border border-[var(--color-border-subtle)]">
+          <div class="relative flex-1">
+            <span class="absolute left-3 top-2.5 text-[var(--color-text-muted)]">
+              <Icon name="search" size={14} />
+            </span>
+            <input
+              type="text"
+              placeholder="Cari judul posisi, keahlian, atau nama perusahaan..."
+              bind:value={searchQuery}
+              oninput={loadJobs}
+              class="w-full text-xs pl-8 pr-8 py-2 rounded-xl bg-[var(--color-page)] border border-[var(--color-border-subtle)] text-[var(--color-text-heading)] placeholder-[var(--color-text-muted)] focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)]"
+            />
+            {#if searchQuery}
+              <button
+                onclick={() => { searchQuery = ''; loadJobs(); }}
+                class="absolute right-2.5 top-2.5 text-[var(--color-text-muted)] hover:text-[var(--color-text-heading)] cursor-pointer"
+              >
+                <Icon name="x" size={12} />
+              </button>
+            {/if}
+          </div>
+
+          <div class="flex items-center gap-2 px-2 text-xs text-[var(--color-text-secondary)]">
+            {#if loading}
+              <span class="flex items-center gap-1.5 text-[var(--color-text-muted)]">
+                <span class="w-3 h-3 border-2 border-[var(--color-border-strong)] border-t-[var(--color-text-heading)] rounded-full animate-spin"></span>
+                Memperbarui...
+              </span>
+            {:else}
+              <span class="font-mono text-[11px]">
+                <strong>{jobs.length}</strong> lowongan ditemukan
+              </span>
+            {/if}
+          </div>
+        </div>
+
+        <!-- Active Filter Pills Bar (if any) -->
+        {#if selectedRole !== 'all' || selectedExperience !== 'all' || selectedArea !== 'all' || selectedSource !== 'all' || onlyNew}
+          <div class="flex flex-wrap items-center gap-1.5 text-xs">
+            <span class="text-[11px] font-mono text-[var(--color-text-muted)]">Aktif:</span>
+            {#if selectedRole !== 'all'}
+              <span class="ui-chip ui-chip-active text-[11px] gap-1">
+                Role: {selectedRole}
+                <button onclick={() => { selectedRole = 'all'; loadJobs(); }} class="cursor-pointer ml-0.5"><Icon name="x" size={10} /></button>
+              </span>
+            {/if}
+            {#if selectedExperience !== 'all'}
+              <span class="ui-chip ui-chip-active text-[11px] gap-1">
+                Exp: {selectedExperience}
+                <button onclick={() => { selectedExperience = 'all'; loadJobs(); }} class="cursor-pointer ml-0.5"><Icon name="x" size={10} /></button>
+              </span>
+            {/if}
+            {#if selectedArea !== 'all'}
+              <span class="ui-chip ui-chip-active text-[11px] gap-1">
+                Area: {selectedArea}
+                <button onclick={() => { selectedArea = 'all'; loadJobs(); }} class="cursor-pointer ml-0.5"><Icon name="x" size={10} /></button>
+              </span>
+            {/if}
+            {#if selectedSource !== 'all'}
+              <span class="ui-chip ui-chip-active text-[11px] gap-1">
+                Platform: {selectedSource}
+                <button onclick={() => { selectedSource = 'all'; loadJobs(); }} class="cursor-pointer ml-0.5"><Icon name="x" size={10} /></button>
+              </span>
+            {/if}
+            {#if onlyNew}
+              <span class="ui-chip ui-chip-active text-[11px] gap-1">
+                Baru Saja
+                <button onclick={() => { onlyNew = false; loadJobs(); }} class="cursor-pointer ml-0.5"><Icon name="x" size={10} /></button>
+              </span>
+            {/if}
+          </div>
+        {/if}
+
+        <!-- Empty State -->
+        {#if jobs.length === 0 && !loading}
+          <div class="text-center py-16 px-4 bg-[var(--color-surface)] rounded-2xl border border-[var(--color-border-subtle)] space-y-2">
+            <div class="w-10 h-10 rounded-full bg-[var(--color-page)] border border-[var(--color-border)] mx-auto flex items-center justify-center text-[var(--color-text-muted)]">
+              <Icon name="search" size={18} />
+            </div>
+            <p class="text-sm font-semibold text-[var(--color-text-heading)]">Tidak ada lowongan yang sesuai kriteria.</p>
+            <p class="text-xs text-[var(--color-text-secondary)] max-w-sm mx-auto">
+              Coba perluas filter role atau level pengalaman, atau klik "Scrape Sekarang" untuk mengambil data terbaru.
+            </p>
+          </div>
+        {:else}
+          <!-- Card Feed Grid -->
+          <!-- In 5-column mode: 3 cols; In 4-column mode: 2 cols -->
+          <div class="grid grid-cols-1 md:grid-cols-2 {activeJob ? 'xl:grid-cols-2' : 'xl:grid-cols-3'} gap-3">
+            {#each jobs as j}
+              <div
+                role="button"
+                tabindex="0"
+                onclick={() => selectJob(j)}
+                onkeydown={(e) => e.key === 'Enter' && selectJob(j)}
+                class="text-left bg-[var(--color-page)] rounded-2xl p-4 border transition duration-150 flex flex-col justify-between cursor-pointer group hover:border-[var(--color-border-strong)] hover:shadow-xs {activeJob && activeJob.id === j.id ? 'border-[var(--color-accent)] ring-2 ring-[var(--color-accent)]/40 bg-[var(--color-accent-soft)]/20' : (j.is_new ? 'border-[#FAFF7E] bg-[var(--color-surface)]/60' : 'border-[var(--color-border-subtle)]')}"
+              >
+                <div class="space-y-2.5">
+                  <!-- Header badges -->
+                  <div class="flex flex-wrap items-center gap-1.5 text-[10px] font-mono">
+                    {#if j.is_new}
+                      <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[var(--color-highlight)] text-[#121212] font-semibold border border-[var(--color-border)]">
+                        <span class="w-1.5 h-1.5 rounded-full bg-[#121212]"></span>
+                        NEW
+                      </span>
+                    {/if}
+
+                    <!-- Source badge -->
+                    {#if j.sources && j.sources.length > 1}
+                      <span class="px-2 py-0.5 rounded-full bg-[var(--color-surface)] text-[var(--color-text-heading)] border border-[var(--color-border)] font-semibold">
+                        {j.sources.length} SITUS
+                      </span>
+                    {:else}
+                      <span class="px-2 py-0.5 rounded-full bg-[var(--color-surface)] text-[var(--color-text-secondary)] border border-[var(--color-border-subtle)] uppercase">
+                        {j.source || 'PORTAL'}
+                      </span>
+                    {/if}
+
+                    <!-- Role Category badge -->
+                    <span class="px-2 py-0.5 rounded-full bg-[var(--color-surface-muted)] text-[var(--color-text-secondary)] border border-[var(--color-border-subtle)]">
+                      {formatRole(j.role_category)}
                     </span>
-                  {/each}
-                {:else}
-                  <span class="text-[10px] font-semibold px-2 py-0.5 rounded-full border {sourceColors[j.source] || 'bg-slate-100 text-slate-700'}">
-                    {(j.source || 'JOB').toUpperCase()}
-                  </span>
-                {/if}
 
-                <span class="text-[10px] font-medium px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200">
-                  {j.area.replace('_', ' ').toUpperCase()}
-                </span>
+                    <!-- Experience Bracket badge -->
+                    {#if j.experience_level && j.experience_level !== 'unspecified'}
+                      <span class="px-2 py-0.5 rounded-full bg-[var(--color-accent-soft)] text-[var(--color-on-accent)] border border-[var(--color-accent)]">
+                        {j.experience_level.toUpperCase()}
+                      </span>
+                    {/if}
+                  </div>
 
-                {#if j.is_remote}
-                  <span class="text-[10px] font-medium px-2 py-0.5 rounded-full bg-teal-50 text-teal-700 border border-teal-200">
-                    Remote/Hybrid
+                  <!-- Title & Company -->
+                  <div>
+                    <h3 class="text-sm font-semibold text-[var(--color-text-heading)] group-hover:text-[#121212] line-clamp-2 leading-snug">
+                      {j.title}
+                    </h3>
+                    <p class="text-xs text-[var(--color-text-secondary)] mt-1 flex items-center gap-1.5">
+                      <Icon name="building" size={12} class="text-[var(--color-text-muted)] shrink-0" />
+                      <span class="truncate">{j.company}</span>
+                    </p>
+                  </div>
+
+                  <!-- Experience requirement snippet -->
+                  <div class="pt-1 flex items-center gap-1.5 text-[11px] text-[var(--color-text-secondary)] font-mono">
+                    <Icon name="briefcase" size={12} class="text-[var(--color-text-muted)] shrink-0" />
+                    <span class="truncate">{formatExp(j)}</span>
+                  </div>
+
+                  <!-- Location & Salary -->
+                  <div class="flex items-center justify-between text-[11px] text-[var(--color-text-muted)] pt-1">
+                    <span class="flex items-center gap-1 truncate max-w-[65%]">
+                      <Icon name="mapPin" size={11} class="shrink-0" />
+                      <span class="truncate">{formatArea(j.area)}</span>
+                    </span>
+
+                    {#if j.salary}
+                      <span class="text-[#202020] font-medium font-mono text-[10px] truncate">
+                        {j.salary}
+                      </span>
+                    {/if}
+                  </div>
+                </div>
+
+                <!-- Footer Card -->
+                <div class="mt-3 pt-2.5 border-t border-[var(--color-border-subtle)] flex items-center justify-between text-[11px] text-[var(--color-text-muted)]">
+                  <span class="font-mono flex items-center gap-1">
+                    <Icon name="clock" size={11} />
+                    {formatTime(j.posted_at || j.first_seen_at)}
                   </span>
-                {/if}
+
+                  <span class="text-xs font-semibold text-[var(--color-text-secondary)] group-hover:text-[var(--color-text-heading)] flex items-center gap-1">
+                    <span>Lihat</span>
+                    <Icon name="arrowDownRight" size={12} />
+                  </span>
+                </div>
               </div>
+            {/each}
+          </div>
+        {/if}
+      </main>
 
-              <!-- Title & Company -->
-              <h3 class="text-sm font-bold text-slate-900 group-hover:text-indigo-600 transition line-clamp-2">
-                <a
-                  href={j.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  onclick={() => markJobSeen(j)}
-                >
-                  {j.title}
-                </a>
-              </h3>
+      <!-- ========================================================= -->
+      <!-- COLUMN 3: SIDEBAR DETAIL (1 part, visible when card clicked) -->
+      <!-- ========================================================= -->
+      {#if activeJob}
+        <aside class="lg:col-span-1 bg-[var(--color-surface)] p-4 rounded-2xl border border-[var(--color-border)] space-y-4 max-h-[calc(100vh-6rem)] overflow-y-auto sticky top-16 shadow-sm">
+          <!-- Top Close & Action header -->
+          <div class="flex items-center justify-between pb-3 border-b border-[var(--color-border-subtle)]">
+            <span class="text-xs font-mono uppercase tracking-wider text-[var(--color-text-muted)]">
+              Detail Loker
+            </span>
+            <div class="flex items-center gap-1.5">
+              <a
+                href={activeJob.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                class="control-pill px-2.5 py-1 text-[11px] font-mono flex items-center gap-1 text-[var(--color-text-heading)]"
+                title="Buka Halaman Loker Asli"
+              >
+                <span>Buka</span>
+                <Icon name="arrowUpRight" size={11} />
+              </a>
 
-              <p class="text-xs font-semibold text-slate-700 mt-1">
-                {j.company}
+              <button
+                onclick={() => (activeJob = null)}
+                class="p-1 rounded-full text-[var(--color-text-muted)] hover:text-[var(--color-text-heading)] hover:bg-[var(--color-surface-hover)] cursor-pointer"
+                title="Tutup Detail"
+              >
+                <Icon name="x" size={15} />
+              </button>
+            </div>
+          </div>
+
+          <!-- Title & Company -->
+          <div class="space-y-1.5">
+            <h2 class="text-sm font-semibold text-[var(--color-text-heading)] leading-snug">
+              {activeJob.title}
+            </h2>
+            <div class="text-xs text-[var(--color-text-secondary)] space-y-1">
+              <p class="flex items-center gap-1.5 font-medium">
+                <Icon name="building" size={13} class="text-[var(--color-text-muted)] shrink-0" />
+                <span>{activeJob.company}</span>
               </p>
-
-              <!-- Salary & Details -->
-              {#if j.salary}
-                <p class="text-xs font-medium text-emerald-700 mt-2 flex items-center gap-1">
-                  <span>💰</span> {j.salary}
+              <p class="flex items-center gap-1.5">
+                <Icon name="mapPin" size={13} class="text-[var(--color-text-muted)] shrink-0" />
+                <span>{activeJob.location_raw || formatArea(activeJob.area)}</span>
+              </p>
+              {#if activeJob.salary}
+                <p class="flex items-center gap-1.5 font-mono text-[var(--color-text-heading)]">
+                  <Icon name="banknote" size={13} class="text-[var(--color-text-muted)] shrink-0" />
+                  <span>{activeJob.salary}</span>
                 </p>
               {/if}
-
-              <p class="text-[11px] text-slate-400 mt-2 flex items-center gap-1 line-clamp-1">
-                <span>📍</span> {j.location_raw || 'Lokasi tidak spesifik'}
-              </p>
             </div>
+          </div>
 
-            <!-- Footer Card -->
-            <div class="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-400">
-              <span>{formatTime(j.posted_at || j.first_seen_at)}</span>
-              <div class="flex items-center gap-2">
-                {#if j.sources && j.sources.length > 1 && j.urls}
-                  {#each j.sources as src}
+          <!-- Role & Experience Spec -->
+          <div class="p-3 bg-[var(--color-page)] rounded-xl border border-[var(--color-border-subtle)] space-y-2">
+            <div class="text-[11px] font-mono uppercase tracking-wider text-[var(--color-text-muted)]">
+              Klasifikasi Sistem
+            </div>
+            <div class="space-y-1 text-xs">
+              <div class="flex items-center justify-between">
+                <span class="text-[var(--color-text-secondary)]">Kategori:</span>
+                <span class="font-semibold text-[var(--color-text-heading)]">{formatRole(activeJob.role_category)}</span>
+              </div>
+              <div class="flex items-center justify-between">
+                <span class="text-[var(--color-text-secondary)]">Level:</span>
+                <span class="font-semibold text-[var(--color-text-heading)]">{activeJob.experience_level ? activeJob.experience_level.toUpperCase() : 'FLEKSIBEL'}</span>
+              </div>
+              {#if activeJob.min_years !== null || activeJob.max_years !== null}
+                <div class="flex items-center justify-between text-[11px] font-mono">
+                  <span class="text-[var(--color-text-secondary)]">Rentang:</span>
+                  <span class="text-[var(--color-text-heading)]">
+                    {activeJob.min_years !== null ? activeJob.min_years : 0} - {activeJob.max_years !== null ? activeJob.max_years : '+'} th
+                  </span>
+                </div>
+              {/if}
+              {#if activeJob.experience_raw}
+                <div class="pt-1 border-t border-[var(--color-border-subtle)] text-[10px] font-mono text-[var(--color-text-muted)]">
+                  Kutipan: "{activeJob.experience_raw}"
+                </div>
+              {/if}
+            </div>
+          </div>
+
+          <!-- Visual Timeline Section -->
+          <div class="space-y-2 pt-1 border-t border-[var(--color-border-subtle)]">
+            <div class="text-[11px] font-mono uppercase tracking-wider text-[var(--color-text-muted)]">
+              Timeline Loker
+            </div>
+            <Timeline job={activeJob} />
+          </div>
+
+          <!-- Description Section -->
+          <div class="space-y-2 pt-2 border-t border-[var(--color-border-subtle)]">
+            <div class="text-[11px] font-mono uppercase tracking-wider text-[var(--color-text-muted)]">
+              Deskripsi Pekerjaan
+            </div>
+            {#if activeJob.description && activeJob.description.trim()}
+              <div class="text-xs text-[var(--color-text-secondary)] whitespace-pre-wrap leading-relaxed max-h-60 overflow-y-auto pr-1 border border-[var(--color-border-subtle)] bg-[var(--color-page)] p-2.5 rounded-xl font-sans">
+                {activeJob.description}
+              </div>
+            {:else}
+              <p class="text-xs text-[var(--color-text-muted)] italic bg-[var(--color-page)] p-3 rounded-xl border border-[var(--color-border-subtle)]">
+                Deskripsi lengkap tersedia langsung di portal perekrut. Klik tombol di bawah untuk membacanya.
+              </p>
+            {/if}
+          </div>
+
+          <!-- Direct Apply / Platform Links -->
+          <div class="pt-2 border-t border-[var(--color-border-subtle)] space-y-2">
+            {#if activeJob.sources && activeJob.sources.length > 1 && activeJob.urls}
+              <div class="space-y-1">
+                <span class="text-[11px] font-mono text-[var(--color-text-muted)]">Tersedia di {activeJob.sources.length} portal:</span>
+                <div class="grid grid-cols-2 gap-1.5 pt-1">
+                  {#each activeJob.sources as src}
                     <a
-                      href={j.urls[src]}
+                      href={activeJob.urls[src]}
                       target="_blank"
                       rel="noopener noreferrer"
-                      onclick={() => markJobSeen(j)}
-                      class="text-indigo-600 font-semibold hover:underline capitalize"
+                      class="control-pill px-2 py-1.5 text-xs text-center truncate capitalize text-[var(--color-text-heading)] font-medium"
                     >
                       {src} ↗
                     </a>
                   {/each}
-                {:else}
-                  <a
-                    href={j.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    onclick={() => markJobSeen(j)}
-                    class="text-indigo-600 font-semibold hover:underline inline-flex items-center gap-0.5"
-                  >
-                    Buka Postingan ↗
-                  </a>
-                {/if}
+                </div>
               </div>
-            </div>
+            {:else}
+              <a
+                href={activeJob.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                class="control-pill control-pill-active w-full py-2 text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer text-decoration-none"
+              >
+                <span>Buka di {activeJob.source ? activeJob.source.toUpperCase() : 'Portal'}</span>
+                <Icon name="arrowUpRight" size={13} />
+              </a>
+            {/if}
           </div>
-        {/each}
-      </div>
-    {/if}
-  </main>
+        </aside>
+      {/if}
+
+    </div>
+  </div>
 
   <!-- Add Saved Search Modal -->
   {#if showAddSearch}
-    <div class="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-      <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-slate-100">
-        <div class="flex items-center justify-between pb-4 border-b border-slate-100">
-          <h3 class="text-base font-bold text-slate-900">Tambah Pencarian Tersimpan</h3>
+    <div class="fixed inset-0 bg-[#121212]/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+      <div class="bg-[var(--color-page)] rounded-2xl max-w-md w-full p-6 shadow-xl border border-[var(--color-border)] space-y-4">
+        <div class="flex items-center justify-between pb-3 border-b border-[var(--color-border-subtle)]">
+          <div class="flex items-center gap-2">
+            <span class="w-6 h-6 rounded-full bg-[var(--color-accent)] text-[#121212] flex items-center justify-center">
+              <Icon name="plus" size={13} />
+            </span>
+            <h3 class="text-sm font-semibold text-[var(--color-text-heading)]">
+              Simpan Pencarian Otomatis
+            </h3>
+          </div>
           <button
             onclick={() => (showAddSearch = false)}
-            class="text-slate-400 hover:text-slate-600"
-          >✕</button>
+            class="text-[var(--color-text-muted)] hover:text-[var(--color-text-heading)] cursor-pointer p-1"
+          >
+            <Icon name="x" size={15} />
+          </button>
         </div>
 
-        <form onsubmit={submitNewSearch} class="mt-4 space-y-4">
+        <form onsubmit={submitNewSearch} class="space-y-4">
           <div>
-            <label for="kw-input" class="block text-xs font-semibold text-slate-700 mb-1">Kata Kunci / Posisi</label>
+            <label for="kw-input" class="block text-xs font-mono uppercase tracking-wider text-[var(--color-text-secondary)] mb-1">
+              Kata Kunci Posisi / Skill
+            </label>
             <input
               id="kw-input"
               type="text"
               required
-              placeholder="e.g. Backend Engineer, Golang, DevOps"
+              placeholder="e.g. Junior Backend Engineer, Golang, React"
               bind:value={newKeyword}
-              class="w-full text-xs px-3 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+              class="w-full text-xs px-3 py-2 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text-heading)] focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)]"
             />
           </div>
 
           <div>
-            <label for="area-select" class="block text-xs font-semibold text-slate-700 mb-1">Target Area</label>
+            <label for="area-select" class="block text-xs font-mono uppercase tracking-wider text-[var(--color-text-secondary)] mb-1">
+              Target Area
+            </label>
             <select
               id="area-select"
               bind:value={newArea}
-              class="w-full text-xs px-3 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+              class="w-full text-xs px-3 py-2 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text-heading)] focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)]"
             >
               {#each areas as a}
                 <option value={a.id}>{a.label}</option>
@@ -487,49 +863,55 @@
           </div>
 
           <div>
-            <span class="block text-xs font-semibold text-slate-700 mb-2">Pilih Situs yang Di-scrape Tiap Jam:</span>
-            <div class="grid grid-cols-2 gap-2 text-xs">
-              <label class="flex items-center gap-2">
-                <input type="checkbox" bind:checked={newSources.jobstreet} class="rounded text-indigo-600" />
+            <span class="block text-xs font-mono uppercase tracking-wider text-[var(--color-text-secondary)] mb-2">
+              Sumber Platform Tiap Jam
+            </span>
+            <div class="grid grid-cols-2 gap-2 text-xs font-mono">
+              <label class="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" bind:checked={newSources.jobstreet} class="accent-[var(--color-accent)] rounded" />
                 JobStreet
               </label>
-              <label class="flex items-center gap-2">
-                <input type="checkbox" bind:checked={newSources.kalibrr} class="rounded text-indigo-600" />
+              <label class="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" bind:checked={newSources.kalibrr} class="accent-[var(--color-accent)] rounded" />
                 Kalibrr
               </label>
-              <label class="flex items-center gap-2">
-                <input type="checkbox" bind:checked={newSources.linkedin} class="rounded text-indigo-600" />
+              <label class="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" bind:checked={newSources.linkedin} class="accent-[var(--color-accent)] rounded" />
                 LinkedIn
               </label>
-              <label class="flex items-center gap-2">
-                <input type="checkbox" bind:checked={newSources.glints} class="rounded text-indigo-600" />
+              <label class="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" bind:checked={newSources.glints} class="accent-[var(--color-accent)] rounded" />
                 Glints
               </label>
-              <label class="flex items-center gap-2">
-                <input type="checkbox" bind:checked={newSources.dealls} class="rounded text-indigo-600" />
+              <label class="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" bind:checked={newSources.dealls} class="accent-[var(--color-accent)] rounded" />
                 Dealls
               </label>
-              <label class="flex items-center gap-2">
-                <input type="checkbox" bind:checked={newSources.karir} class="rounded text-indigo-600" />
+              <label class="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" bind:checked={newSources.karir} class="accent-[var(--color-accent)] rounded" />
                 Karir.com
               </label>
-              <label class="flex items-center gap-2">
-                <input type="checkbox" bind:checked={newSources.techinasia} class="rounded text-indigo-600" />
+              <label class="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" bind:checked={newSources.techinasia} class="accent-[var(--color-accent)] rounded" />
                 Tech in Asia
               </label>
             </div>
           </div>
 
-          <div class="pt-4 flex justify-end gap-2">
+          <div class="pt-3 border-t border-[var(--color-border-subtle)] flex justify-end gap-2">
             <button
               type="button"
               onclick={() => (showAddSearch = false)}
-              class="text-xs px-3 py-2 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50"
-            >Batal</button>
+              class="control-pill px-3 py-1.5 text-xs text-[var(--color-text-secondary)] hover:text-[var(--color-text-heading)] cursor-pointer"
+            >
+              Batal
+            </button>
             <button
               type="submit"
-              class="text-xs font-semibold px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs"
-            >Simpan Pencarian</button>
+              class="control-pill control-pill-active px-4 py-1.5 text-xs font-semibold cursor-pointer"
+            >
+              Simpan Pencarian
+            </button>
           </div>
         </form>
       </div>

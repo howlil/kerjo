@@ -61,6 +61,10 @@ def parse_kalibrr_payload(data: dict) -> list[Job]:
         work_type = item.get("tenure")
 
         posted_at = item.get("created_at") or item.get("activation_date")
+        desc = (item.get("description") or item.get("summary") or item.get("qualification") or "").strip()
+        min_exp = item.get("minimum_experience")
+        if min_exp is not None:
+            desc = f"{desc}\nPengalaman minimal {min_exp} tahun.".strip()
 
         jobs.append(
             Job(
@@ -75,6 +79,7 @@ def parse_kalibrr_payload(data: dict) -> list[Job]:
                 work_type=work_type,
                 is_remote=is_remote,
                 posted_at=posted_at,
+                description=desc or None,
             )
         )
     return jobs
