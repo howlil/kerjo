@@ -3,7 +3,7 @@
   import Badge from '../ui/Badge.svelte';
   import CompanyAvatar from '../ui/CompanyAvatar.svelte';
 
-  let { job, selected = false, saved = false, onSelect, onSave, formatArea, formatRole, formatTime } = $props();
+  let { job, selected = false, saved = false, onSelect, onSave, selecting = false, checked = false, onToggleSelect = () => {}, formatArea, formatRole, formatTime } = $props();
 </script>
 
 <article class="job-record" class:is-selected={selected} class:is-seen={!job.is_new}>
@@ -36,7 +36,18 @@
     {#if job.salary}<span class="job-record-salary" title={job.salary}>{job.salary}</span>{/if}
     <span class="job-record-date">{formatTime(job.posted_at)}</span>
   </div>
+  {#if selecting}
+    <label class="job-record-picker" title="Pilih data scraping">
+      <input type="checkbox" {checked} onchange={() => onToggleSelect(job)} aria-label={'Pilih ' + job.title + ' dari ' + job.company}/>
+    </label>
+  {:else}
   <button type="button" class="ui-icon-button save-button" class:is-active={saved} onclick={() => onSave(job)} title={saved ? 'Hapus dari simpanan lokal' : 'Simpan posisi secara lokal'} aria-label={saved ? 'Hapus simpanan' : 'Simpan posisi'} aria-pressed={saved}>
     <Icon name="bookmark" size={15}/>
   </button>
+  {/if}
 </article>
+
+<style>
+.job-record-picker{position:absolute;right:9px;top:38px;width:30px;height:30px;display:grid;place-items:center;cursor:pointer;border-radius:var(--radius-sm);background:var(--color-surface)}
+.job-record-picker input{width:16px;height:16px;accent-color:var(--color-accent);cursor:pointer}
+</style>
