@@ -153,6 +153,7 @@ class JobRunner:
         """Network-only task. No SQLite mutations happen in worker threads."""
         lock = self._source_locks[source_name]
         with lock:
+            started = time.monotonic()
             remaining = self._blocked_until.get(source_name, 0) - time.monotonic()
             if remaining > 0:
                 return SourceResult(source=source_name, success=False, jobs=[],
@@ -168,7 +169,8 @@ class JobRunner:
             except Exception as exc:
                 result = SourceResult(source=source_name, success=False,
                                       jobs=[], error_message=str(exc))
-            if result.success and result.jobs and self._detail_remaining[source_name] > 0:
+            if (result.success and result.jobs and result.http_status not in (401, 403, 429, 503)
+                    and self._detail_remaining[source_name] > 0):
                 attempts = {}
                 try:
                     per_keyword_budget = max(0, min(10, int(os.getenv("KERJO_DETAIL_ENRICH_LIMIT", "3"))))
@@ -181,6 +183,8 @@ class JobRunner:
                 )
                 self._detail_remaining[source_name] -= attempts.get("attempted", 0)
             self._last_finished[source_name] = time.monotonic()
+            result.elapsed_ms = max(result.elapsed_ms,
+                                    int((self._last_finished[source_name] - started) * 1000))
             if result.http_status in (403, 429, 503):
                 # A failed page may have returned partial data. Either way,
                 # avoid hammering the same provider on subsequent keywords.
