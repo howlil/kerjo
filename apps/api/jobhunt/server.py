@@ -309,12 +309,14 @@ def execute_batch(db, features, gate, run_id, keyword=None, area="all", sources=
     stats = {"total_tasks": 0, "processed_tasks": 0, "jobs_found": 0, "jobs_new": 0, "errors": 0,
              "jobs_recent": 0, "filtered_old": 0, "filtered_unknown": 0, "filtered_future": 0,
              "pages_fetched": 0, "retry_count": 0, "details_enriched": 0, "duration_ms": 0}
+    task_outcomes = []
     try:
         features.update_batch(run_id, status="running", started_at=utc_now())
         def progress(result, done, total):
             stats["total_tasks"] = total
             stats["processed_tasks"] = done
             if result:
+                task_outcomes.append(result["status"])
                 stats["jobs_found"] += result["found_count"]
                 stats["jobs_new"] += result["new_count"]
                 stats["jobs_recent"] += result.get("recent_count", 0)
@@ -337,7 +339,7 @@ def execute_batch(db, features, gate, run_id, keyword=None, area="all", sources=
         status = (
             "skipped" if stats["total_tasks"] == 0 else
             "completed" if not stats["errors"] else
-            "failed" if stats["errors"] == stats["processed_tasks"] else
+            "failed" if task_outcomes and all(outcome == "error" for outcome in task_outcomes) else
             "partial"
         )
         features.update_batch(run_id, status=status, finished_at=utc_now())
