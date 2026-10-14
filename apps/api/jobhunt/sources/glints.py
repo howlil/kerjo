@@ -129,7 +129,12 @@ def fetch_glints(keyword: str, country: str = "ID") -> SourceResult:
             if not isinstance((payload.get("props") or {}).get("pageProps"), dict) or "initialJobs" not in payload["props"]["pageProps"]:
                 return SourceResult(source="glints", success=False, jobs=[], error_message="Unexpected provider schema")
             jobs = parse_glints_payload(payload)
-            return SourceResult(source="glints", success=True, jobs=jobs, raw_count=len(payload["props"]["pageProps"]["initialJobs"].get("jobsInPage") or payload["props"]["pageProps"]["initialJobs"].get("jobs") or []) if isinstance(payload["props"]["pageProps"]["initialJobs"], dict) else len(payload["props"]["pageProps"]["initialJobs"]), pages_fetched=1)
+            initial = payload["props"]["pageProps"].get("initialJobs") or {}
+            raw_items = ((initial.get("jobsInPage") or initial.get("jobs") or [])
+                         if isinstance(initial, dict) else initial
+                         if isinstance(initial, list) else [])
+            return SourceResult(source="glints", success=True, jobs=jobs,
+                                raw_count=len(raw_items), pages_fetched=1)
     except urllib.error.HTTPError as e:
         return SourceResult(
             source="glints",
