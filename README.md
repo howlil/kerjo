@@ -73,6 +73,23 @@ existing local records at query time as well.
 `queued`, `running`, `completed`, `partial`, `failed`, or `skipped`.
 
 
+## Job-description enrichment and recruiter posts
+
+Kerjo enriches public job cards with full descriptions from embedded JobPosting
+JSON-LD or targeted HTML sections, with missing/partial/complete indicators.
+Official public company ATS boards (Greenhouse, Lever, Ashby) are supported
+when KERJO_ATS_BOARDS lists their real company slugs. The default enrichment
+budget is KERJO_ENRICH_LIMIT=12 detail pages per source/search. Collection
+remains manual.
+
+LinkedIn guest scraping is retired. Recruiter posts can be imported manually
+from the Discover toolbar (must have a dated post, company, software role and
+direct careers/application link). Authorized LinkedIn Posts API access is
+optional, restricted to permitted authors. It cannot fetch every HR post.
+
+See [Job ingestion V2 design and setup](docs/job-ingestion-v2.md) for
+configuration, API examples, limitations, and security constraints.
+
 ## Main API routes
 
 | Route | Methods | Purpose |
@@ -81,7 +98,8 @@ existing local records at query time as well.
 | /api/searches | GET, POST | Saved search rules |
 | /api/searches/{id}/toggle | PUT | Toggle active search |
 | /api/searches/{id} | DELETE | Delete saved search |
-| /api/run | POST | Enqueue background scrape |
+| /api/run | POST | Enqueue manual scrape worker |
+| /api/linkedin-posts | POST | Import 1–20 recruiter posts with verifiable direct application links |
 | /api/run/{id} | GET | Inspect run progress |
 | /api/runs | GET | Per-source execution history |
 | /api/source-health | GET | Last result by adapter |
