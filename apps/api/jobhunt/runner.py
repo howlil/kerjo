@@ -2,10 +2,16 @@ import os
 import pathlib
 import logging
 import time
+import threading
+import queue
+from dataclasses import replace
+from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, Callable, List, Any, Optional
 from jobhunt.db import Database
 from jobhunt.models import Job, SourceResult
 from jobhunt.freshness import posting_age_status, parse_posted_at
+from jobhunt.collection import collect_pages
+from jobhunt.enrichment import enrich_jobs
 from jobhunt.sources.jobstreet import fetch_jobstreet
 from jobhunt.sources.kalibrr import fetch_kalibrr
 from jobhunt.sources.linkedin import fetch_linkedin
@@ -16,38 +22,6 @@ from jobhunt.sources.techinasia import fetch_techinasia
 
 logger = logging.getLogger(__name__)
 
-def collect_pages(source, fetch_page, page_limit=None):
-    """Bounded provider pagination with retry and partial-failure visibility."""
-    limit = min(5, max(1, int(page_limit or os.getenv("KERJO_MAX_PAGES", "2"))))
-    output, identifiers = [], set()
-    for page in range(1, limit + 1):
-        result = None
-        for attempt in range(2):
-            try:
-                result = fetch_page(page)
-            except Exception as exc:
-                result = SourceResult(source=source, success=False, jobs=[], error_message=str(exc))
-            if result.success:
-                break
-            msg = (result.error_message or "").lower()
-            if attempt == 0 and any(tag in msg for tag in ("429", "503", "timeout", "timed out")):
-                time.sleep(2)
-                continue
-            break
-        if not result.success:
-            if output:
-                return SourceResult(source=source, success=True, jobs=output,
-                                    error_message="Partial collection: " + str(result.error_message))
-            return result
-        if not result.jobs:
-            # The adapter might have filtered this page by area; later pages can still match.
-            continue
-        for job in result.jobs:
-            identity = (job.source, job.external_id)
-            if identity not in identifiers:
-                identifiers.add(identity)
-                output.append(job)
-    return SourceResult(source=source, success=True, jobs=output)
 
 
 DEFAULT_SOURCES: Dict[str, Callable[[str], SourceResult]] = {
@@ -127,71 +101,158 @@ class JobRunner:
         db: Optional[Database] = None,
         sources: Optional[Dict[str, Callable[[str], SourceResult]]] = None,
         lock_file: str = "data/runner.lock",
+        max_workers: Optional[int] = None,
     ):
         self.db = db or Database()
         self.sources = sources if sources is not None else DEFAULT_SOURCES
         self.lock_file = lock_file
+        try:
+            configured = int(os.getenv("KERJO_MAX_WORKERS", "3")) if max_workers is None else int(max_workers)
+        except (TypeError, ValueError):
+            configured = 3
+        self.max_workers = max(1, min(4, configured))
+        self._source_locks = {source: threading.Lock() for source in self.sources}
+        self._blocked_until = {}
+        self._last_finished = {}
+        # Shared across keywords for this single, manually triggered run.
+        try:
+            detail_budget = int(os.getenv("KERJO_RUN_DETAIL_BUDGET", "8"))
+        except (ValueError, TypeError):
+            detail_budget = 8
+        self._detail_remaining = {
+            source: max(0, min(16, detail_budget)) for source in self.sources
+        }
 
     def run_all_active(self, on_progress=None) -> List[Dict[str, Any]]:
-        """
-        Executes all active saved searches across their configured sources.
-        """
+        """Run only when manually invoked, even for active saved searches."""
         searches = self.db.get_searches(active_only=True)
         if not searches:
             if not self.db.get_searches():
-                logger.info("Fresh database; seeding default technical searches.")
+                logger.info("First manual run: seeding default technical searches.")
                 self.db.seed_default_searches()
                 searches = self.db.get_searches(active_only=True)
             else:
-                logger.info("All saved searches are paused; skipping run.")
-        if not searches:
-            if on_progress:
-                on_progress(None, 0, 0)
+                logger.info("Saved searches are paused; manual run skipped.")
+        tasks = []
+        for search in searches:
+            for source in dict.fromkeys(x.strip() for x in search["sources"].split(",")):
+                if source in self.sources:
+                    tasks.append((search["id"], search["keyword"], search["area"], source))
+                elif source:
+                    logger.warning("Unsupported source %s in search %s", source, search["id"])
+        return self._run_tasks(tasks, on_progress)
+
+    def run_single(self, keyword: str, area_filter: str = "all", source_names=None, on_progress=None):
+        """Manual CLI/API one-off search."""
+        selected = list(self.sources) if source_names is None else source_names
+        tasks = [(None, keyword, area_filter, source)
+                 for source in dict.fromkeys(selected) if source in self.sources]
+        return self._run_tasks(tasks, on_progress)
+
+    def _fetch_source(self, source_name, keyword):
+        """Network-only task. No SQLite mutations happen in worker threads."""
+        lock = self._source_locks[source_name]
+        with lock:
+            started = time.monotonic()
+            remaining = self._blocked_until.get(source_name, 0) - time.monotonic()
+            if remaining > 0:
+                return SourceResult(source=source_name, success=False, jobs=[],
+                                    error_message="Provider cooldown in effect (rate-limit/access response)",
+                                    http_status=429)
+            # Extra pacing across successive keywords on the same provider.
+            gap = max(0.0, min(3.0, self._last_finished.get(source_name, 0) +
+                                   0.4 - time.monotonic()))
+            if gap:
+                time.sleep(gap)
+            try:
+                result = self.sources[source_name](keyword)
+            except Exception as exc:
+                result = SourceResult(source=source_name, success=False,
+                                      jobs=[], error_message=str(exc))
+            if (result.success and result.jobs and result.http_status not in (401, 403, 429, 503)
+                    and self._detail_remaining[source_name] > 0):
+                attempts = {}
+                try:
+                    per_keyword_budget = max(0, min(10, int(os.getenv("KERJO_DETAIL_ENRICH_LIMIT", "3"))))
+                except (ValueError, TypeError):
+                    per_keyword_budget = 3
+                result.enriched_count = enrich_jobs(
+                    result.jobs, source_name,
+                    max_details=min(per_keyword_budget, self._detail_remaining[source_name]),
+                    stats=attempts,
+                )
+                self._detail_remaining[source_name] -= attempts.get("attempted", 0)
+            self._last_finished[source_name] = time.monotonic()
+            result.elapsed_ms = max(result.elapsed_ms,
+                                    int((self._last_finished[source_name] - started) * 1000))
+            if result.http_status in (403, 429, 503):
+                # A failed page may have returned partial data. Either way,
+                # avoid hammering the same provider on subsequent keywords.
+                self._blocked_until[source_name] = time.monotonic() + (
+                    60 if result.http_status == 403 else
+                    min(60, max(30, result.retry_after_seconds or 0))
+                )
+            return result
+
+    def _run_tasks(self, tasks, on_progress):
+        total = len(tasks)
+        if on_progress:
+            on_progress(None, 0, total)
+        if not tasks:
             return []
 
-        results = []
-        total_tasks = sum(len([n for n in s["sources"].split(",") if n.strip() in self.sources]) for s in searches)
-        if on_progress:
-            on_progress(None, 0, total_tasks)
-        for s in searches:
-            search_id = s["id"]
-            keyword = s["keyword"]
-            area_filter = s["area"]
-            src_names = [name.strip() for name in s["sources"].split(",") if name.strip()]
+        # Each provider gets its own sequential task lane: fast sites cannot
+        # be starved behind N queued keywords from a slow/rate-limited site.
+        grouped = {}
+        provider_lanes = {}
+        for index, task in enumerate(tasks):
+            _, keyword, _, source = task
+            key = (source, keyword.strip().casefold())
+            if key not in grouped:
+                grouped[key] = []
+                provider_lanes.setdefault(source, []).append(key)
+            grouped[key].append(index)
 
-            for src_name in src_names:
-                fetcher = self.sources.get(src_name)
-                if not fetcher:
-                    logger.warning(f"Unknown source '{src_name}', skipping.")
-                    continue
+        completed_queue = queue.Queue()
+        ordered = [None] * total
+        completed = 0
 
-                res = self._execute_search_on_source(search_id, keyword, area_filter, src_name, fetcher)
-                results.append(res)
-                if on_progress:
-                    on_progress(res, len(results), total_tasks)
+        def provider_lane(source, keys):
+            for key in keys:
+                keyword = tasks[grouped[key][0]][1]
+                try:
+                    fetched = self._fetch_source(source, keyword)
+                except Exception as exc:
+                    fetched = SourceResult(source=source, success=False,
+                                           jobs=[], error_message=str(exc))
+                completed_queue.put((key, fetched))
 
-        return results
-
-    def run_single(self, keyword: str, area_filter: str = "all", source_names: Optional[List[str]] = None, on_progress=None) -> List[Dict[str, Any]]:
-        """
-        Executes a one-off run for a given keyword and sources.
-        """
-        if not source_names:
-            source_names = list(self.sources.keys())
-
-        results = []
-        valid_sources = [n for n in source_names if n in self.sources]
-        if on_progress:
-            on_progress(None, 0, len(valid_sources))
-        for src_name in valid_sources:
-            fetcher = self.sources.get(src_name)
-            if not fetcher:
-                continue
-            res = self._execute_search_on_source(None, keyword, area_filter, src_name, fetcher)
-            results.append(res)
-            if on_progress:
-                on_progress(res, len(results), len(valid_sources))
-        return results
+        with ThreadPoolExecutor(max_workers=min(self.max_workers, len(provider_lanes)),
+                                thread_name_prefix="kerjo-provider") as pool:
+            futures = [pool.submit(provider_lane, source, keys)
+                       for source, keys in provider_lanes.items()]
+            for _ in range(len(grouped)):
+                key, fetched = completed_queue.get()
+                indexes = grouped[key]
+                for group_index, index in enumerate(indexes):
+                    search_id, keyword, area_filter, source = tasks[index]
+                    # Metrics count real network work only once when several
+                    # saved searches share this provider/keyword request.
+                    measured = fetched if group_index == 0 else replace(
+                        fetched, pages_fetched=0, retry_count=0,
+                        enriched_count=0, elapsed_ms=0)
+                    result = self._execute_search_on_source(
+                        search_id, keyword, area_filter, source,
+                        self.sources[source], prefetched=measured)
+                    ordered[index] = result
+                    completed += 1
+                    if on_progress:
+                        on_progress(result, completed, total)
+            # Preserve the exceptions of the lane itself rather than silently
+            # claiming success if a provider worker unexpectedly terminated.
+            for future in futures:
+                future.result()
+        return ordered
 
     def _execute_search_on_source(
         self,
@@ -200,16 +261,10 @@ class JobRunner:
         area_filter: str,
         source_name: str,
         fetcher: Callable[[str], SourceResult],
+        prefetched: Optional[SourceResult] = None,
     ) -> Dict[str, Any]:
-        try:
-            source_result: SourceResult = fetcher(keyword)
-        except Exception as e:
-            source_result = SourceResult(
-                source=source_name,
-                success=False,
-                jobs=[],
-                error_message=str(e),
-            )
+        # Invoked on the coordinating thread; keep all SQLite writes serial.
+        source_result = prefetched if prefetched is not None else self._fetch_source(source_name, keyword)
 
         if not source_result.success:
             self.db.record_run(
@@ -219,6 +274,10 @@ class JobRunner:
                 jobs_new=0,
                 error_message=source_result.error_message,
                 search_id=search_id,
+                pages_fetched=source_result.pages_fetched,
+                retry_count=source_result.retry_count,
+                details_enriched=source_result.enriched_count,
+                duration_ms=source_result.elapsed_ms,
             )
             return {
                 "source": source_name,
@@ -226,6 +285,10 @@ class JobRunner:
                 "status": "error",
                 "found_count": 0,
                 "new_count": 0,
+                "pages_fetched": source_result.pages_fetched,
+                "retry_count": source_result.retry_count,
+                "details_enriched": source_result.enriched_count,
+                "duration_ms": source_result.elapsed_ms,
                 "error": source_result.error_message,
             }
 
@@ -258,6 +321,10 @@ class JobRunner:
             filtered_future=age_counts["future"],
             error_message=source_result.error_message,
             search_id=search_id,
+            pages_fetched=source_result.pages_fetched,
+            retry_count=source_result.retry_count,
+            details_enriched=source_result.enriched_count,
+            duration_ms=source_result.elapsed_ms,
         )
 
         return {
@@ -270,5 +337,9 @@ class JobRunner:
             "filtered_unknown": age_counts["unknown"],
             "filtered_future": age_counts["future"],
             "new_count": new_count,
+            "pages_fetched": source_result.pages_fetched,
+            "retry_count": source_result.retry_count,
+            "details_enriched": source_result.enriched_count,
+            "duration_ms": source_result.elapsed_ms,
             "error": source_result.error_message,
         }

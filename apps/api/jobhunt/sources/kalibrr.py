@@ -5,6 +5,7 @@ import logging
 import time
 from typing import Optional
 from jobhunt.models import Job, SourceResult
+from jobhunt.collection import retry_after_seconds
 from jobhunt.location import match_area
 
 logger = logging.getLogger(__name__)
@@ -66,7 +67,7 @@ def parse_kalibrr_payload(data: dict) -> list[Job]:
         is_remote = bool(item.get("is_work_from_home") or item.get("is_hybrid"))
         work_type = item.get("tenure")
 
-        posted_at = item.get("activation_date") or item.get("published_at") or item.get("created_at")
+        posted_at = item.get("activation_date") or item.get("published_at")
         desc = (item.get("description") or item.get("summary") or item.get("qualification") or "").strip()
         min_exp = item.get("minimum_experience")
         if min_exp is not None:
@@ -92,7 +93,7 @@ def parse_kalibrr_payload(data: dict) -> list[Job]:
         )
     return jobs
 
-def fetch_kalibrr(keyword: str, limit: int = 30, offset: int = 0, retries: int = 2) -> SourceResult:
+def fetch_kalibrr(keyword: str, limit: int = 30, offset: int = 0, retries: int = 1) -> SourceResult:
     query_params = {
         "limit": str(limit),
         "offset": str(offset),
@@ -110,6 +111,8 @@ def fetch_kalibrr(keyword: str, limit: int = 30, offset: int = 0, retries: int =
     )
 
     last_error = ""
+    last_status = None
+    last_retry_after = None
     for attempt in range(retries):
         try:
             with urllib.request.urlopen(req, timeout=40) as response:
@@ -119,14 +122,17 @@ def fetch_kalibrr(keyword: str, limit: int = 30, offset: int = 0, retries: int =
                         success=False,
                         jobs=[],
                         error_message=f"HTTP status {response.status}",
+                        http_status=response.status,
                     )
                 payload = json.loads(response.read().decode("utf-8"))
                 if not isinstance(payload, dict) or not isinstance(payload.get("jobs"), list):
                     return SourceResult(source="kalibrr", success=False, jobs=[], error_message="Unexpected provider schema")
                 jobs = parse_kalibrr_payload(payload)
-                return SourceResult(source="kalibrr", success=True, jobs=jobs)
+                return SourceResult(source="kalibrr", success=True, jobs=jobs, raw_count=len(payload["jobs"]), pages_fetched=1)
         except urllib.error.HTTPError as e:
             last_error = f"HTTP Error {e.code}: {e.reason}"
+            last_status = e.code
+            last_retry_after = retry_after_seconds(e.headers.get("Retry-After") if e.headers else None)
             break
         except Exception as e:
             last_error = str(e)
@@ -139,4 +145,6 @@ def fetch_kalibrr(keyword: str, limit: int = 30, offset: int = 0, retries: int =
         success=False,
         jobs=[],
         error_message=last_error or "Unknown error",
+        http_status=last_status,
+        retry_after_seconds=last_retry_after,
     )

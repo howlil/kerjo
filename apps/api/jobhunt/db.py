@@ -88,6 +88,10 @@ class Database:
                     filtered_old INTEGER NOT NULL DEFAULT 0,
                     filtered_unknown INTEGER NOT NULL DEFAULT 0,
                     filtered_future INTEGER NOT NULL DEFAULT 0,
+                    pages_fetched INTEGER NOT NULL DEFAULT 0,
+                    retry_count INTEGER NOT NULL DEFAULT 0,
+                    details_enriched INTEGER NOT NULL DEFAULT 0,
+                    duration_ms INTEGER NOT NULL DEFAULT 0,
                     error_message TEXT,
                     ran_at TEXT NOT NULL,
                     FOREIGN KEY(search_id) REFERENCES searches(id) ON DELETE SET NULL
@@ -115,7 +119,8 @@ class Database:
 
             # Historical databases must retain their existing job/application data.
             run_cols = {row["name"] for row in conn.execute("PRAGMA table_info(job_runs)")}
-            for name in ("jobs_recent", "filtered_old", "filtered_unknown", "filtered_future"):
+            for name in ("jobs_recent", "filtered_old", "filtered_unknown", "filtered_future",
+                         "pages_fetched", "retry_count", "details_enriched", "duration_ms"):
                 if name not in run_cols:
                     conn.execute(f"ALTER TABLE job_runs ADD COLUMN {name} INTEGER NOT NULL DEFAULT 0")
 
@@ -452,6 +457,10 @@ class Database:
         filtered_old: int = 0,
         filtered_unknown: int = 0,
         filtered_future: int = 0,
+        pages_fetched: int = 0,
+        retry_count: int = 0,
+        details_enriched: int = 0,
+        duration_ms: int = 0,
     ):
         now = datetime.datetime.now(datetime.timezone.utc).isoformat()
         with self._get_connection() as conn:
@@ -459,11 +468,15 @@ class Database:
                 """
                 INSERT INTO job_runs (
                     search_id, source, status, jobs_found, jobs_new, jobs_recent,
-                    filtered_old, filtered_unknown, filtered_future, error_message, ran_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    filtered_old, filtered_unknown, filtered_future,
+                    pages_fetched, retry_count, details_enriched, duration_ms,
+                    error_message, ran_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (search_id, source, status, jobs_found, jobs_new, jobs_recent,
-                 filtered_old, filtered_unknown, filtered_future, error_message, now),
+                 filtered_old, filtered_unknown, filtered_future,
+                 pages_fetched, retry_count, details_enriched, duration_ms,
+                 error_message, now),
             )
 
     def get_latest_runs(self, limit: int = 20) -> List[Dict[str, Any]]:

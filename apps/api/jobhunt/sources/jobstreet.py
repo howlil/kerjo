@@ -4,6 +4,7 @@ import json
 import logging
 from typing import Optional
 from jobhunt.models import Job, SourceResult
+from jobhunt.collection import retry_after_seconds
 from jobhunt.location import match_area
 
 logger = logging.getLogger(__name__)
@@ -121,18 +122,21 @@ def fetch_jobstreet(keyword: str, where: str = "Jakarta Raya", page: int = 1, pa
                     success=False,
                     jobs=[],
                     error_message=f"HTTP status {response.status}",
+                    http_status=response.status,
                 )
             payload = json.loads(response.read().decode("utf-8"))
             if not isinstance(payload, dict) or not isinstance(payload.get("data"), list):
                 return SourceResult(source="jobstreet", success=False, jobs=[], error_message="Unexpected provider schema")
             jobs = parse_jobstreet_payload(payload)
-            return SourceResult(source="jobstreet", success=True, jobs=jobs)
+            return SourceResult(source="jobstreet", success=True, jobs=jobs, raw_count=len(payload["data"]), pages_fetched=1)
     except urllib.error.HTTPError as e:
         return SourceResult(
             source="jobstreet",
             success=False,
             jobs=[],
             error_message=f"HTTP Error {e.code}: {e.reason}",
+        http_status=e.code,
+        retry_after_seconds=retry_after_seconds(e.headers.get("Retry-After") if e.headers else None),
         )
     except Exception as e:
         return SourceResult(

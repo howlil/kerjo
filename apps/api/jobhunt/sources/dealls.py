@@ -4,6 +4,7 @@ import json
 import logging
 from typing import Optional
 from jobhunt.models import Job, SourceResult
+from jobhunt.collection import retry_after_seconds
 from jobhunt.location import match_area
 
 logger = logging.getLogger(__name__)
@@ -59,7 +60,7 @@ def parse_dealls_payload(data: dict) -> list[Job]:
         emp_types = item.get("employmentTypes") or []
         work_type = ", ".join(emp_types) if emp_types else None
 
-        posted_at = item.get("publishedAt") or item.get("createdAt")
+        posted_at = item.get("publishedAt")
         desc = (item.get("description") or item.get("jobDescription") or item.get("requirements") or "").strip()
 
         jobs.append(
@@ -106,18 +107,21 @@ def fetch_dealls(keyword: str, page: int = 1, limit: int = 30) -> SourceResult:
                     success=False,
                     jobs=[],
                     error_message=f"HTTP status {response.status}",
+                    http_status=response.status,
                 )
             payload = json.loads(response.read().decode("utf-8"))
             if not isinstance(payload, dict) or not isinstance((payload.get("data") or {}).get("docs"), list):
                 return SourceResult(source="dealls", success=False, jobs=[], error_message="Unexpected provider schema")
             jobs = parse_dealls_payload(payload)
-            return SourceResult(source="dealls", success=True, jobs=jobs)
+            return SourceResult(source="dealls", success=True, jobs=jobs, raw_count=len(payload["data"]["docs"]), pages_fetched=1)
     except urllib.error.HTTPError as e:
         return SourceResult(
             source="dealls",
             success=False,
             jobs=[],
             error_message=f"HTTP Error {e.code}: {e.reason}",
+        http_status=e.code,
+        retry_after_seconds=retry_after_seconds(e.headers.get("Retry-After") if e.headers else None),
         )
     except Exception as e:
         return SourceResult(

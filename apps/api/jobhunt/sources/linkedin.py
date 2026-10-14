@@ -5,6 +5,7 @@ import html
 import logging
 from typing import Optional
 from jobhunt.models import Job, SourceResult
+from jobhunt.collection import retry_after_seconds
 from jobhunt.location import match_area
 
 logger = logging.getLogger(__name__)
@@ -111,6 +112,7 @@ def fetch_linkedin(keyword: str, location: str = "Jakarta, Indonesia", start: in
                     success=False,
                     jobs=[],
                     error_message=f"HTTP status {response.status}",
+                    http_status=response.status,
                 )
             html_content = response.read().decode("utf-8", "replace")
             jobs = parse_linkedin_html(html_content)
@@ -118,7 +120,7 @@ def fetch_linkedin(keyword: str, location: str = "Jakarta, Indonesia", start: in
                                 ("captcha", "security verification", "challenge", "base-search-card")):
                 return SourceResult(source="linkedin", success=False, jobs=[],
                                     error_message="Blocked or LinkedIn parser structure changed")
-            return SourceResult(source="linkedin", success=True, jobs=jobs)
+            return SourceResult(source="linkedin", success=True, jobs=jobs, raw_count=len(re.findall(r'<div[^>]*base-search-card', html_content)), pages_fetched=1)
     except urllib.error.HTTPError as e:
         status_desc = "Rate-limited / blocked" if e.code in (429, 403) else e.reason
         return SourceResult(
@@ -126,6 +128,8 @@ def fetch_linkedin(keyword: str, location: str = "Jakarta, Indonesia", start: in
             success=False,
             jobs=[],
             error_message=f"HTTP {e.code}: {status_desc}",
+        http_status=e.code,
+        retry_after_seconds=retry_after_seconds(e.headers.get("Retry-After") if e.headers else None),
         )
     except Exception as e:
         return SourceResult(
