@@ -26,20 +26,52 @@ python -m jobhunt serve --host 127.0.0.1 --port 8000
 
 Open http://127.0.0.1:8000. The DB directory is created automatically. For hot reload use 'task dev'; 'task serve' rebuilds the UI and starts API. Run 'task verify' to test and build.
 
-## Collection and background runs
+## Manual collection: last 14 days
 
-POST /api/run accepts optional keyword, sources and area. It returns HTTP 202 with run_id. GET /api/run/{id} reports queued, running, completed, partial or failed, including processed_tasks, total_tasks, jobs_found, jobs_new and errors.
-
-Set KERJO_MAX_PAGES to adjust bounded pagination (default 2, cap 5). Provider errors including malformed payloads and known HTML challenge cases are visible in run/source health rather than silently treated as successful collection.
-
-On Windows, install the hourly schedule with:
+**Kerjo never schedules scraping.** Click **Scrape sekarang** in the dashboard, or run:
 
 ~~~powershell
-powershell -ExecutionPolicy Bypass -File scripts/schedule.ps1 install
-powershell -ExecutionPolicy Bypass -File scripts/schedule.ps1 status
+task scrape
+# or directly:
+$env:PYTHONPATH = "apps/api"
+python -m jobhunt run
 ~~~
 
-The UI deliberately does not claim the scheduler is active. Confirm installation in Task Scheduler.
+A manual API/UI request starts a background **worker for that request only**, so the
+dashboard remains responsive. No timer, cron job, or Windows Task Scheduler is
+registered by Kerjo.
+
+**Important for existing installations:** An old Windows Task Scheduler task may
+still be installed even after pulling this revision. Remove it manually, once:
+
+~~~powershell
+schtasks.exe /Delete /TN KerjoHourlyScraper /F
+~~~
+
+The saved search **active** switch determines which queries are included when
+you click Scrape; it does **not** schedule or trigger a scrape automatically.
+
+**Strict freshness contract:** Only job postings with verifiable `posted_at`
+within the previous **14 × 24 hours** are collected into the new discovery batch
+and shown in Discover. Source first-seen and last-seen timestamps, or record
+`updated_at`, are not substitutes for a publication date. Undated, future-dated,
+and older postings are excluded from Discover. Old local records and tracked
+applications remain in SQLite; this update does **not** erase them.
+
+The per-run and per-source reports include `jobs_recent`, `filtered_old`,
+`filtered_unknown`, and `filtered_future` alongside scraper errors. A zero-job
+result with filtered unknown dates is not proof that no suitable positions exist.
+A source that omits publication timestamps may therefore yield zero eligible jobs.
+
+The default pagination budget is 2 pages per provider/keyword, adjustable with
+`KERJO_MAX_PAGES` (hard cap: 5). The LinkedIn source additionally requests
+a two-week date filter; the local date gate is authoritative when a remote site
+ignores filters. The two-week cutoff rolls forward over time and is applied to
+existing local records at query time as well.
+
+`POST /api/run` starts a manual run; `GET /api/run/{id}` reports
+`queued`, `running`, `completed`, `partial`, `failed`, or `skipped`.
+
 
 ## Main API routes
 
@@ -67,7 +99,7 @@ Ranking is deterministic, with score, eligibility, reasons, blockers and unknown
 
 By default server binds to 127.0.0.1, refuses arbitrary cross-origin writes, validates input size, and uses verified TLS. Remote binding requires KERJO_ALLOW_REMOTE=1 and an authenticated reverse proxy. Do not publish the raw HTTP server to the Internet.
 
-The availability label 'recently_seen' means last observed by the scraper; it does not verify an open requisition. Stale and unverified jobs remain identifiable.
+Last observed does not verify that a vacancy remains open. Only published-within-14-days records are visible in Discover; existing application records are preserved.
 
 ## Tests
 
