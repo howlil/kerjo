@@ -63,11 +63,38 @@ The per-run and per-source reports include `jobs_recent`, `filtered_old`,
 result with filtered unknown dates is not proof that no suitable positions exist.
 A source that omits publication timestamps may therefore yield zero eligible jobs.
 
-The default pagination budget is 2 pages per provider/keyword, adjustable with
-`KERJO_MAX_PAGES` (hard cap: 5). The LinkedIn source additionally requests
-a two-week date filter; the local date gate is authoritative when a remote site
-ignores filters. The two-week cutoff rolls forward over time and is applied to
-existing local records at query time as well.
+The collector uses bounded pagination (default 2 pages, hard cap 5),
+separate provider workers (default 3, hard cap 4), and one active fetch per
+provider. SQLite inserts and run logs are committed on the coordinator thread.
+Identical provider/keyword requests are network-shared across saved searches.
+
+Transient 429/5xx/timeouts use up to three attempts with bounded exponential
+backoff, small jitter, and `Retry-After` when provided. HTTP 401/403, CAPTCHA,
+and blocked pages are not bypassed. Repeated pages, an explicit `has_more=false`,
+or raw unfiltered page count zero terminate collection early; location-filtered
+empty pages do not.
+
+For eligible or undated results, optional detail enrichment reads public
+`JobPosting` JSON-LD from allowlisted source HTTPS hosts only. It never follows
+redirects, sends credentials, or treats `dateModified` as `datePosted`.
+When no trustworthy date is available, the strict rolling 14-day gate still
+excludes the listing. It is an explicit best-effort step, not proof that all
+sources expose dates. Source health includes page/retry/enrichment/duration
+counts, including partial errors.
+
+| Environment variable | Default | Bounds | Meaning |
+|---|---:|---:|---|
+| `KERJO_MAX_PAGES` | 2 | 1–5 | Page budget per provider / keyword |
+| `KERJO_MAX_WORKERS` | 3 | 1–4 | Parallel provider workers; never parallel on one provider |
+| `KERJO_REQUEST_GAP_SECONDS` | 0.4 | 0–3 | Inter-page polite delay |
+| `KERJO_DETAIL_ENRICH_LIMIT` | 3 | 0–10 | Detail-page requests per provider / keyword; 0 disables |
+
+The LinkedIn adapter additionally asks for a 14-day server-side filter.
+Local publication-date checking is authoritative. The window rolls forward
+over time, including for previously collected local rows.
+
+See [Scraper V3 execution design](docs/SCRAPER_DESIGN.md) for shapes,
+concurrency, failure policies, security boundaries, and verification.
 
 `POST /api/run` starts a manual run; `GET /api/run/{id}` reports
 `queued`, `running`, `completed`, `partial`, `failed`, or `skipped`.
