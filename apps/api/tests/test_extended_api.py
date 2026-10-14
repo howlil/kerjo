@@ -54,6 +54,25 @@ class TestExtendedAPI(unittest.TestCase):
         self.assertEqual(second["total"],2)
         self.assertNotEqual(first["jobs"][0]["title"],second["jobs"][0]["title"])
 
+    def test_discovery_never_uses_first_seen_as_publication_date(self):
+        from datetime import timedelta
+        from jobhunt.freshness import utc_now
+        self.db.upsert_jobs([
+            Job(source="kalibrr", external_id="old-in-api", title="Backend Engineer",
+                company="Aged Co", area="jakarta_selatan", location_raw="Jakarta Selatan",
+                url="https://example.org/aged", posted_at=(utc_now()-timedelta(days=19)).isoformat()),
+            Job(source="kalibrr", external_id="undated-in-api", title="Backend Engineer",
+                company="Undated Co", area="jakarta_selatan", location_raw="Jakarta Selatan",
+                url="https://example.org/undated", posted_at=None),
+        ])
+        _, response=self.api("/api/jobs?limit=20&dedup=0")
+        self.assertEqual(response["max_post_age_days"], 14)
+        self.assertEqual(response["total"],3)
+        self.assertFalse(any(job["company"] in ("Aged Co", "Undated Co") for job in response["jobs"]))
+        _, companies=self.api("/api/companies")
+        self.assertFalse(any(c["company"] in ("Aged Co", "Undated Co") for c in companies["companies"]))
+        self.assertEqual(len(self.db.get_jobs(limit=None)),5)
+
     def test_scoped_seen_endpoint(self):
         _, jobs = self.api("/api/jobs?dedup=0")
         first_id = jobs["jobs"][0]["id"]
