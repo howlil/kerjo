@@ -55,7 +55,14 @@
     <p>Riwayat hasil scraping manual. Dihitung dari tanggal publikasi, bukan waktu pertama ditemukan.</p>
     {#if !sources.length}<p>Belum ada riwayat scraping.</p>{/if}
     {#each sources as source}
-      <div class="source-row"><strong>{source.source}</strong><span>{source.status} · {source.jobs_recent || 0} dalam 14 hari · {source.filtered_old || 0} lama · {source.filtered_unknown || 0} tanpa tanggal · {formatTime(source.ran_at)}</span></div>
+      <div class="source-row">
+        <strong>{source.source}</strong>
+        <div class="source-diagnostics">
+          <span>{source.status} · {source.jobs_recent || 0} lolos 14 hari · {source.filtered_old || 0} lama · {source.filtered_unknown || 0} tanpa tanggal</span>
+          <span>{source.pages_fetched || 0} halaman · {source.retry_count || 0} retry · {source.details_enriched || 0} enrichment · {source.duration_ms || 0} ms · {formatTime(source.ran_at)}</span>
+          {#if source.error_message}<span title={source.error_message}>Error: {source.error_message}</span>{/if}
+        </div>
+      </div>
     {/each}
   </section>
 </div>
@@ -72,6 +79,6 @@
 .preference-fields label{font-size:12px;font-weight:600;display:grid;gap:7px}
 .preference-fields input{padding:9px;border:1px solid var(--color-border);border-radius:var(--radius-md);background:var(--color-surface);color:var(--color-text-heading)}
 .source-list{margin-top:30px}.source-row{display:flex;justify-content:space-between;gap:15px;padding:11px 0;border-bottom:1px solid var(--color-border);font-size:12px}
-.source-row span{color:var(--color-text-secondary)}
+.source-row span{color:var(--color-text-secondary)}.source-diagnostics{display:grid;gap:3px;text-align:right;overflow-wrap:anywhere}.source-diagnostics span{font-size:11px}
 @media(max-width:620px){.preference-fields{grid-template-columns:1fr}.preferences-page{padding:15px}}
 </style>
