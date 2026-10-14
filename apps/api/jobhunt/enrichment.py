@@ -119,7 +119,10 @@ class JobDetailHTML(HTMLParser):
         self.suppressed = 0
 
     def handle_starttag(self, tag, attrs):
-        self.depth += 1
+        # HTML void elements (<br>, <meta>, <img>) never have closing tags.
+        if tag not in ("area", "base", "br", "col", "embed", "hr", "img",
+                       "input", "link", "meta", "param", "source", "track", "wbr"):
+            self.depth += 1
         a = dict(attrs)
         if tag == "script" and a.get("type", "").lower() == "application/ld+json":
             self.script_depth = self.depth
@@ -139,7 +142,9 @@ class JobDetailHTML(HTMLParser):
 
     def handle_startendtag(self, tag, attrs):
         self.handle_starttag(tag, attrs)
-        self.handle_endtag(tag)
+        if tag not in ("area", "base", "br", "col", "embed", "hr", "img",
+                       "input", "link", "meta", "param", "source", "track", "wbr"):
+            self.handle_endtag(tag)
 
     def handle_data(self, data):
         if self.script_depth is not None:
@@ -209,19 +214,20 @@ def fetch_job_detail(url, opener=None):
 
 def enrich_job(job, fetcher=fetch_job_detail):
     """Keep snippets when detail cannot be confirmed; never relabel snippet as full."""
-    job.description_status = "partial" if job.description else "missing"
-    job.description_source = "search-result" if job.description else None
+    if job.description_status != "complete":
+        job.description_status = "partial" if job.description else "missing"
+        job.description_source = job.description_source or ("search-result" if job.description else None)
     if not allowed_detail_url(job.url):
         return job
     try:
         detail = fetcher(job.url)
     except (OSError, ValueError, urllib.error.URLError):
         return job
-    if detail.status == "complete":
+    if detail.status == "complete" and (job.description_status != "complete" or len(detail.description) > len(job.description or "")):
         job.description = detail.description
         job.description_status = "complete"
         job.description_source = detail.provenance
-    elif detail.description and len(detail.description) > len(job.description or ""):
+    elif job.description_status != "complete" and detail.description and len(detail.description) > len(job.description or ""):
         job.description = detail.description
         job.description_status = "partial"
         job.description_source = detail.provenance
