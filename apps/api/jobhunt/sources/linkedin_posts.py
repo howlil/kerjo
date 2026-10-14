@@ -156,7 +156,7 @@ def fetch_linkedin_posts(keyword):
     token = os.getenv("KERJO_LINKEDIN_ACCESS_TOKEN")
     authors = authorized_authors()
     if not token or not authors:
-        return SourceResult("linkedin_posts", True, [],
+        return SourceResult("linkedin_posts", False, [],
                             error_message="Not configured: approved LinkedIn API token and author URNs required")
     version = os.getenv("KERJO_LINKEDIN_VERSION", "202609")
     if not re.fullmatch(r"20[0-9]{4}", version):
