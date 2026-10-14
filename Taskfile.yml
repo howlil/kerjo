@@ -55,9 +55,19 @@ tasks:
       - python -m jobhunt run {{.CLI_ARGS}}
 
   schedule:
-    desc: Daftarkan otomatisasi tiap jam ke Windows Task Scheduler
+    desc: Install Kerjo hourly Windows Task Scheduler task
     cmds:
-      - powershell -ExecutionPolicy Bypass -File scripts/schedule.ps1
+      - powershell -ExecutionPolicy Bypass -File scripts/schedule.ps1 install
+
+  schedule-status:
+    desc: Check hourly scheduler status
+    cmds:
+      - powershell -ExecutionPolicy Bypass -File scripts/schedule.ps1 status
+
+  schedule-remove:
+    desc: Unregister hourly scheduler
+    cmds:
+      - powershell -ExecutionPolicy Bypass -File scripts/schedule.ps1 uninstall
 
   reset-db:
     desc: Reset dan bersihkan semua data loker lama di database

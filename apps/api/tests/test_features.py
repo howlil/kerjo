@@ -10,7 +10,9 @@ from jobhunt.models import Job
 def sample(source, external_id, title="Backend Engineer"):
     return Job(source=source, external_id=external_id, title=title, company="Acme",
                location_raw="Jakarta Selatan", area="jakarta_selatan",
-               url="https://example.org/" + external_id, work_mode="hybrid")
+               url=("https://example.org/vacancy/backend?utm_source=jobstreet" if external_id=="a" else
+                    "https://example.org/vacancy/backend?utm_source=kalibrr" if external_id=="c" else
+                    "https://example.org/" + external_id), work_mode="hybrid")
 
 
 class TestWorkflowFeatures(unittest.TestCase):
@@ -85,6 +87,21 @@ class TestWorkflowFeatures(unittest.TestCase):
         pipeline = self.store.applications()
         self.assertEqual(len(pipeline),1)
         self.assertEqual(set(pipeline[0]["ids"]),set(backend["ids"]))
+
+    def test_unrelated_vacancies_keep_independent_application_state(self):
+        self.db.upsert_jobs([Job(source="glints",external_id="other",
+            title="Backend Engineer",company="Acme",location_raw="Jakarta Selatan",
+            area="jakarta_selatan",url="https://example.org/vacancy/other",work_mode="hybrid")])
+        all_jobs = self.db.get_jobs()
+        grouped = group_dedup_jobs(all_jobs)
+        self.assertEqual(len(grouped),3)
+        source_group = next(g for g in grouped if len(g["ids"])==2)
+        self.store.update_application(source_group["ids"],{"status":"applied"})
+        pipeline=self.store.applications()
+        self.assertEqual(len(pipeline),1)
+        self.assertEqual(set(pipeline[0]["ids"]),set(source_group["ids"]))
+        single=next(g for g in grouped if g["title"]=="Backend Engineer" and len(g["ids"])==1)
+        self.assertEqual(single["id"] not in source_group["ids"], True)
 
     def test_rank_without_profile_does_not_claim_eligible(self):
         match = rank_job(self.jobs[0], self.store.get_preferences())

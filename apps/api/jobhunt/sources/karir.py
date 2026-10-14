@@ -23,7 +23,14 @@ def parse_karir_payload(data: dict) -> list[Job]:
         company = (item.get("company_name") or "Unknown Company").strip()
         company_logo = item.get("company_logo") or (item.get("company") or {}).get("logo") or item.get("logo")
 
-        loc_str = (item.get("description") or "Jakarta").strip()
+        # Job description is not a geographical field. Missing location is unknown.
+        location = (item.get("location") or item.get("city_name") or
+                    item.get("city") or item.get("work_location") or
+                    item.get("location_name") or "")
+        if isinstance(location, dict):
+            location = (location.get("name") or location.get("label") or
+                        location.get("city") or "")
+        loc_str = location.strip() if isinstance(location, str) else ""
         area = match_area(loc_str)
         if area is None:
             # Excluded area

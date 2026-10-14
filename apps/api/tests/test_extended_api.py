@@ -21,7 +21,7 @@ class TestExtendedAPI(unittest.TestCase):
             Job(source="jobstreet",external_id="1",title="Backend Engineer",company="Acme",
                 location_raw="Jakarta Selatan",area="jakarta_selatan",url="https://example.org/a"),
             Job(source="linkedin",external_id="2",title="Backend Engineer",company="Acme",
-                location_raw="Jakarta Selatan",area="jakarta_selatan",url="https://example.org/b"),
+                location_raw="Jakarta Selatan",area="jakarta_selatan",url="https://example.org/a?utm_source=linkedin"),
             Job(source="jobstreet",external_id="3",title="Frontend Developer",company="Acme",
                 location_raw="Jakarta Selatan",area="jakarta_selatan",url="https://example.org/c"),
         ])
@@ -93,6 +93,38 @@ class TestExtendedAPI(unittest.TestCase):
                     break
                 time.sleep(0.05)
             self.assertEqual(progress["run"]["status"],"completed")
+
+    def test_paused_search_returns_skipped_without_new_tasks(self):
+        for search in self.db.get_searches():
+            self.db.set_search_active(search["id"], False)
+        status, response = self.api("/api/run","POST",{})
+        self.assertEqual(status,202)
+        for _ in range(50):
+            _, result = self.api("/api/run/" + str(response["run_id"]))
+            if result["run"]["status"] in ("skipped", "completed", "failed"):
+                break
+            time.sleep(0.05)
+        self.assertEqual(result["run"]["status"],"skipped")
+        self.assertEqual(result["run"]["total_tasks"],0)
+        self.assertEqual(len(self.db.get_searches(active_only=True)),0)
+
+    def test_paginated_results_visit_every_unique_vacancy(self):
+        extra = [Job(source="kalibrr", external_id="page-" + str(n),
+                     title="Backend Engineer", company="Pagination Corp",
+                     location_raw="Jakarta Selatan", area="jakarta_selatan",
+                     url="https://example.org/roles/" + str(n))
+                 for n in range(125)]
+        self.db.upsert_jobs(extra)
+        seen_ids = set()
+        # Initial 3 source records contain one verified cross-source URL
+        # representing the same vacancy, therefore 2 unique + 125 = 127.
+        for offset in range(0, 127, 30):
+            _, response = self.api("/api/jobs?limit=30&offset=" + str(offset))
+            self.assertEqual(response["total"], 127)
+            for job in response["jobs"]:
+                self.assertNotIn(job["id"], seen_ids)
+                seen_ids.add(job["id"])
+        self.assertEqual(len(seen_ids), 127)
 
     def test_untrusted_origin_write_rejected(self):
         req=urllib.request.Request(

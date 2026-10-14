@@ -6,7 +6,7 @@ import datetime as dt
 import json
 import sqlite3
 from typing import Optional
-from jobhunt.dedup import normalize_key
+from jobhunt.dedup import verified_vacancy_key
 
 CATEGORIES = {"backend", "frontend", "fullstack", "mobile", "data",
               "infra_network", "qa", "product_engineer", "software_engineer"}
@@ -180,12 +180,17 @@ class FeatureStore:
             return jobs
         prefs = preferences if preferences is not None else self.get_preferences()
         ids = sorted({int(i) for job in jobs for i in (job.get("ids") or [job["id"]])})
+        saved = set()
+        apps = {}
+        # Bound parameter counts even on older SQLite builds.
         with self.db._get_connection() as conn:
-            placeholders = ",".join("?" for _ in ids)
-            saved = {row["job_id"] for row in conn.execute(
-                "SELECT job_id FROM saved_jobs WHERE job_id IN (" + placeholders + ")", ids)}
-            apps = {row["job_id"]: dict(row) for row in conn.execute(
-                "SELECT * FROM applications WHERE job_id IN (" + placeholders + ")", ids)}
+            for start in range(0, len(ids), 500):
+                chunk = ids[start:start + 500]
+                placeholders = ",".join("?" for _ in chunk)
+                saved.update(row["job_id"] for row in conn.execute(
+                    "SELECT job_id FROM saved_jobs WHERE job_id IN (" + placeholders + ")", chunk))
+                apps.update({row["job_id"]: dict(row) for row in conn.execute(
+                    "SELECT * FROM applications WHERE job_id IN (" + placeholders + ")", chunk)})
         for job in jobs:
             group_ids = job.get("ids") or [job["id"]]
             job["is_saved"] = int(any(i in saved for i in group_ids))
@@ -231,14 +236,11 @@ class FeatureStore:
         sql += " ORDER BY COALESCE(a.follow_up_at,a.updated_at) DESC"
         with self.db._get_connection() as conn:
             rows = [dict(row) for row in conn.execute(sql, params)]
-        # A single opening reported by several portals is one pipeline item,
-        # but independently submitted applications stay distinct.
+        # Combine application records ONLY if a verified URL identifies the
+        # same vacancy. Similar employer/title is not sufficient evidence.
         groups = {}
         for row in rows:
-            key = (normalize_key(row["company"],row["title"]),
-                   row.get("area") if row.get("area") != "unspecified" else None,
-                   row.get("work_mode") if row.get("work_mode") != "unknown" else None,
-                   row["status"],row.get("applied_at"))
+            key = (verified_vacancy_key(row), row["status"], row.get("applied_at"))
             if key not in groups:
                 row["ids"] = [row["job_id"]]
                 row["sources"] = [row["source"]]

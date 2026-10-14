@@ -1,4 +1,5 @@
 import re
+from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
 from typing import List, Dict, Any, Set
 
 COMPANY_STOPWORDS = {"pt", "cv", "tbk", "inc", "corp", "corporation", "ltd", "limited", "llc", "group", "indonesia", "jaya"}
@@ -27,19 +28,58 @@ def clean_fallback(text: str) -> str:
     cleaned = re.sub(r"[^\w\s]", "", (text or "").lower())
     return re.sub(r"\s+", " ", cleaned).strip()
 
+def canonical_vacancy_url(url: str) -> str:
+    """Normalize a concrete posting URL, not a guessed company/title identity."""
+    if not isinstance(url, str) or not url.strip():
+        return ""
+    try:
+        parsed = urlsplit(url.strip())
+        if parsed.scheme.lower() not in ("http", "https") or not parsed.hostname:
+            return ""
+        host = parsed.hostname.lower().removeprefix("www.")
+        if parsed.port and parsed.port not in (80, 443):
+            host += ":" + str(parsed.port)
+        path = parsed.path.rstrip("/") or "/"
+        # Query params may contain actual vacancy IDs: retain these.
+        tracking = {"trk", "tracking", "trackingid",
+                    "utm_source", "utm_medium", "utm_campaign", "utm_term",
+                    "utm_content", "fbclid", "gclid"}
+        query = urlencode(sorted((k, v) for k, v in parse_qsl(parsed.query)
+                                 if k.lower() not in tracking))
+        return urlunsplit(("https", host, path, query, ""))
+    except (ValueError, TypeError):
+        return ""
+
+
+def verified_vacancy_key(job: Dict[str, Any]) -> tuple:
+    """Shared verified URL can group provider records; similarity alone never can.
+
+    This deliberately favors false negatives (duplicate cards) over incorrect
+    merges that would change seen/saved/application state on another vacancy.
+    """
+    normalized_url = canonical_vacancy_url(job.get("url") or "")
+    # A homepage or generic category URL cannot identify a particular job.
+    parsed = urlsplit(normalized_url) if normalized_url else None
+    segments = [part.lower() for part in parsed.path.split("/") if part] if parsed else []
+    generic_category = (len(segments) == 1 and
+                        segments[0] in {"jobs", "job", "careers", "vacancies",
+                                        "opportunities", "positions", "listings", "search"} and
+                        not parsed.query)
+    if normalized_url and parsed.path != "/" and not generic_category:
+        return ("url", normalized_url,
+                normalize_key(job.get("company", ""), job.get("title", "")),
+                job.get("area") or "unspecified",
+                job.get("work_mode") or "unknown")
+    return ("source", job.get("source", ""), str(job.get("external_id") or
+                                                job.get("id") or job.get("job_id") or ""))
+
+
 def group_dedup_jobs(jobs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    grouped_map: Dict[str, Dict[str, Any]] = {}
-    order: List[str] = []
+    grouped_map: Dict[tuple, Dict[str, Any]] = {}
+    order: List[tuple] = []
 
     for job in jobs:
-        # Never merge distinct employment types or geographies solely on a shared title.
-        key = normalize_key(job.get("company", ""), job.get("title", ""))
-        mode = (job.get("work_mode") or "unknown").lower()
-        area = job.get("area") or "unspecified"
-        if area != "unspecified":
-            key += "::" + area
-        if mode != "unknown":
-            key += "::" + mode
+        key = verified_vacancy_key(job)
         src = job.get("source", "unknown")
 
         if key not in grouped_map:

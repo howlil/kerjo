@@ -12,7 +12,8 @@ class TestKarirAndTiaParsers(unittest.TestCase):
                         "id": 12345,
                         "job_position": "Backend Engineer",
                         "company_name": "Tech Corp",
-                        "description": "Jakarta Selatan",
+                        "description": "Implement reliable services",
+                        "city_name": "Jakarta Selatan",
                         "salary_lower": 10000000,
                         "salary_upper": 15000000,
                         "posted_at": "2026-10-10T12:00:00Z"
@@ -21,7 +22,8 @@ class TestKarirAndTiaParsers(unittest.TestCase):
                         "id": 67890,
                         "job_position": "Civil Engineer",
                         "company_name": "Build Corp",
-                        "description": "Bekasi",  # Excluded area
+                        "description": "Infrastructure oversight",
+                        "city_name": "Bekasi",  # Excluded area
                         "salary_lower": 0,
                         "salary_upper": 0,
                         "posted_at": "2026-10-11T12:00:00Z"

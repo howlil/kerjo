@@ -1,4 +1,5 @@
 import sqlite3
+from contextlib import contextmanager
 import datetime
 import json
 import os
@@ -12,13 +13,23 @@ class Database:
         os.makedirs(os.path.dirname(os.path.abspath(self.db_path)), exist_ok=True)
         self._init_db()
 
-    def _get_connection(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA journal_mode = WAL")
-        conn.execute("PRAGMA foreign_keys = ON")
-        conn.execute("PRAGMA busy_timeout = 5000")
-        return conn
+    @contextmanager
+    def _get_connection(self):
+        """Commit/rollback and ALWAYS close; 'with sqlite3.connect' alone does not close.
+
+        This is important on Windows where an open SQLite file cannot be
+        removed during test cleanup or application reset.
+        """
+        conn = sqlite3.connect(self.db_path, timeout=5)
+        try:
+            conn.row_factory = sqlite3.Row
+            conn.execute("PRAGMA journal_mode = WAL")
+            conn.execute("PRAGMA foreign_keys = ON")
+            conn.execute("PRAGMA busy_timeout = 5000")
+            with conn:
+                yield conn
+        finally:
+            conn.close()
 
     def _init_db(self):
         with self._get_connection() as conn:
@@ -165,11 +176,11 @@ class Database:
         with self._get_connection() as conn:
             existing = conn.execute("SELECT count(*) FROM searches").fetchone()[0]
             if existing == 0:
-                for kw, area in default_searches:
-                    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
-                conn.execute(
+                now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+                conn.executemany(
                     "INSERT INTO searches(keyword, area, sources, is_active, created_at, updated_at) VALUES(?, ?, ?, 1, ?, ?)",
-                    (kw, area, "jobstreet,kalibrr,linkedin,glints,dealls", now, now)
+                    [(kw, area, "jobstreet,kalibrr,linkedin,glints,dealls", now, now)
+                     for kw, area in default_searches]
                 )
 
     # ---------------- Job Queries & Upsert ----------------
@@ -343,11 +354,11 @@ class Database:
 
         if experience_level and experience_level != "all":
             if experience_level == "entry":
-                sql += " AND (experience_level = 'entry' OR (min_years IS NOT NULL AND min_years <= 1))"
+                sql += " AND experience_level = 'entry'"
             elif experience_level == "mid":
-                sql += " AND (experience_level = 'mid' OR (min_years IS NOT NULL AND min_years >= 1 AND min_years <= 3))"
+                sql += " AND experience_level = 'mid'"
             elif experience_level == "senior":
-                sql += " AND (experience_level = 'senior' OR (min_years IS NOT NULL AND min_years >= 3))"
+                sql += " AND experience_level = 'senior'"
             elif experience_level == "unspecified":
                 sql += " AND (experience_level = 'unspecified' OR experience_level IS NULL)"
 

@@ -1,5 +1,5 @@
 import unittest
-from jobhunt.dedup import normalize_key, group_dedup_jobs
+from jobhunt.dedup import normalize_key, group_dedup_jobs, canonical_vacancy_url
 
 class TestDedup(unittest.TestCase):
     def test_normalize_key(self):
@@ -47,15 +47,46 @@ class TestDedup(unittest.TestCase):
             }
         ]
 
+        # Same employer/title is not evidence of the same requisition.
         grouped = group_dedup_jobs(jobs)
-        # Should be grouped into 2 distinct jobs
-        self.assertEqual(len(grouped), 2)
+        self.assertEqual(len(grouped), 3)
+        self.assertEqual(sorted(len(g["ids"]) for g in grouped), [1, 1, 1])
 
-        # Tokopedia job should have both sources
-        tokopedia_job = [g for g in grouped if "tokopedia" in g["company"].lower()][0]
-        self.assertEqual(sorted(tokopedia_job["sources"]), ["jobstreet", "linkedin"])
-        # Should preserve new state if at least one is new
-        self.assertEqual(tokopedia_job["is_new"], 1)
+        # Verified shared vacancy URL (tracking parameters ignored) may merge.
+        jobs[1]["url"] = "https://id.jobstreet.com/job/1?utm_source=linkedin"
+        grouped = group_dedup_jobs(jobs)
+        self.assertEqual(len(grouped), 2)
+        tokopedia = next(g for g in grouped if "tokopedia" in g["company"].lower())
+        self.assertEqual(sorted(tokopedia["sources"]), ["jobstreet", "linkedin"])
+
+    def test_canonical_url_preserves_vacancy_id_query(self):
+        first = canonical_vacancy_url("https://www.example.com/jobs?id=10&utm_source=mail")
+        second = canonical_vacancy_url("https://example.com/jobs?id=11")
+        self.assertNotEqual(first, second)
+        self.assertEqual(first, "https://example.com/jobs?id=10")
+
+    def test_generic_listing_url_is_not_canonical_identity(self):
+        jobs = [
+            {"id": 1, "source": "jobstreet", "external_id": "a",
+             "url": "https://example.org/jobs", "title": "Backend Engineer",
+             "company": "Acme", "area": "jakarta_selatan", "is_new": 1},
+            {"id": 2, "source": "linkedin", "external_id": "b",
+             "url": "https://example.org/jobs", "title": "Backend Engineer",
+             "company": "Acme", "area": "jakarta_selatan", "is_new": 1}
+        ]
+        self.assertEqual(len(group_dedup_jobs(jobs)), 2)
+        self.assertEqual(canonical_vacancy_url("https://example.org/apply?ref=job123"),
+                         "https://example.org/apply?ref=job123")
+
+    def test_distinct_external_ids_same_title_do_not_merge(self):
+        jobs = [
+            {"id": 1, "source": "jobstreet", "external_id": "a", "url": "https://jobstreet.com/job/a",
+             "title": "Backend Engineer", "company": "Acme", "area": "jakarta_selatan", "is_new": 1},
+            {"id": 2, "source": "jobstreet", "external_id": "b", "url": "https://jobstreet.com/job/b",
+             "title": "Backend Engineer", "company": "Acme", "area": "jakarta_selatan", "is_new": 1},
+        ]
+        self.assertEqual(len(group_dedup_jobs(jobs)), 2)
+
 
 if __name__ == "__main__":
     unittest.main()
