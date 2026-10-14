@@ -5,7 +5,7 @@
   let { run = null, jobs = [], total = 0, loading = false, error = '',
         page = 0, pageSize = 60, source = 'all', query = '', sources = [],
         onSource = () => {}, onSearch = () => {}, onPage = () => {},
-        onBack = () => {}, onDiscover = () => {}, onSave = () => {} } = $props();
+        onBack = () => {}, onDiscover = () => {}, onSave = () => {}, onDelete = () => {}, deletingDisabled = false } = $props();
 
   let chosenId = $state(null);
   let draftQuery = $state('');
@@ -100,6 +100,7 @@
         </div>
         <div class="inspector-actions">
           <Button onclick={() => onSave(selected)}>{selected.is_saved ? 'Remove saved' : 'Save job'}</Button>
+          <Button disabled={deletingDisabled} onclick={() => onDelete(selected)}>Hapus hasil</Button>
           {#if urlSafe(selected.application_url || selected.url)}
             <a class="source-link" href={urlSafe(selected.application_url || selected.url)} target="_blank" rel="noopener noreferrer">Open source <Icon name="externalLink" size={13}/></a>
           {/if}
