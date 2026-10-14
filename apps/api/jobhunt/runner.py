@@ -114,6 +114,14 @@ class JobRunner:
         self._source_locks = {source: threading.Lock() for source in self.sources}
         self._blocked_until = {}
         self._last_finished = {}
+        # Shared across keywords for this single, manually triggered run.
+        try:
+            detail_budget = int(os.getenv("KERJO_RUN_DETAIL_BUDGET", "8"))
+        except (ValueError, TypeError):
+            detail_budget = 8
+        self._detail_remaining = {
+            source: max(0, min(16, detail_budget)) for source in self.sources
+        }
 
     def run_all_active(self, on_progress=None) -> List[Dict[str, Any]]:
         """Run only when manually invoked, even for active saved searches."""
@@ -160,8 +168,14 @@ class JobRunner:
             except Exception as exc:
                 result = SourceResult(source=source_name, success=False,
                                       jobs=[], error_message=str(exc))
-            if result.success and result.jobs:
-                result.enriched_count = enrich_jobs(result.jobs, source_name)
+            if result.success and result.jobs and self._detail_remaining[source_name] > 0:
+                attempts = {}
+                result.enriched_count = enrich_jobs(
+                    result.jobs, source_name,
+                    max_details=self._detail_remaining[source_name],
+                    stats=attempts,
+                )
+                self._detail_remaining[source_name] -= attempts.get("attempted", 0)
             self._last_finished[source_name] = time.monotonic()
             if result.http_status in (403, 429, 503):
                 # A failed page may have returned partial data. Either way,
