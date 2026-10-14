@@ -323,7 +323,7 @@ def extract_experience(text: str) -> Dict[str, Any]:
     ]
     fresh_signal = any(re.search(pat, t_lower) for pat in fresh_patterns)
     # Numeric requirements take precedence over promotional 'fresh graduates welcome'.
-    if fresh_signal and not re.search(r"(?:\bmin(?:imal)?\b|\bat least\b|\b[3-9]\+?\s*(?:years|tahun)\b)", t_lower):
+    if fresh_signal and not re.search(r"(?:\bmin(?:imal|imum)?\b|\bat least\b|\b[3-9]\+?\s*(?:years|tahun)\b)", t_lower):
         return {
             "level": "entry",
             "min_years": 0,
@@ -333,7 +333,7 @@ def extract_experience(text: str) -> Dict[str, Any]:
 
     # 2. Year ranges e.g. "0 - 1 tahun", "0 - 2 years", "1 - 3 years", "2 - 4 thn"
     range_match = re.search(
-        r"(?:pengalaman|experience|min(?:imal)?|kualifikasi|qualification|syarat)?\s*[:\s]*(\d+)\s*(?:-|sampai|to)\s*(\d+)\s*(?:tahun|thn|th|years|yrs|yoe)\b",
+        r"(?:pengalaman|experience|min(?:imal|imum)?|kualifikasi|qualification|syarat)?\s*[:\s]*(\d+)\s*(?:-|sampai|to)\s*(\d+)\s*(?:tahun|thn|th|years?|yrs|yoe)\b",
         t_lower,
     )
     if range_match:
@@ -348,7 +348,7 @@ def extract_experience(text: str) -> Dict[str, Any]:
             return {"level": "mid", "min_years": mn, "max_years": mx, "raw": raw}
 
     # 3. Maksimal N tahun e.g. "maksimal 1 tahun pengalaman", "max 2 years"
-    max_match = re.search(r"\b(?:maksimal|maks|max(?:imum)?)\s*(\d+)\s*(?:tahun|thn|th|years|yrs)\b", t_lower)
+    max_match = re.search(r"\b(?:maksimal|maks|max(?:imum)?)\s*(\d+)\s*(?:tahun|thn|th|years?|yrs)\b", t_lower)
     if max_match:
         mx = float(max_match.group(1))
         raw = f"0 - {int(mx)} tahun"
@@ -357,13 +357,13 @@ def extract_experience(text: str) -> Dict[str, Any]:
 
     # 4. Greater than / Minimal N years e.g. "> 5 years", "lebih dari 3 tahun", "min 5 tahun", "5+ years", "at least 3 years"
     gt_match = re.search(
-        r"(?:>|lebih dari|above|over|minimal|min|at least|sekurang-kurangnya)\s*(\d+)\s*(?:\+|\s*(?:tahun|thn|th|years|yrs|yoe))\b",
+        r"(?:>|lebih dari|above|over|minimal|min|at least|sekurang-kurangnya)\s*(\d+)\s*(?:\+|\s*(?:tahun|thn|th|years?|yrs|yoe))\b",
         t_lower,
     )
     if not gt_match:
-        gt_match = re.search(r"\b(\d+)\+\s*(?:tahun|thn|th|years|yrs|yoe)\b", t_lower)
+        gt_match = re.search(r"\b(\d+)\+\s*(?:tahun|thn|th|years?|yrs|yoe)\b", t_lower)
     if not gt_match:
-        gt_match = re.search(r"(?:pengalaman|experience)\s*[:\s]*(\d+)\s*(?:tahun|thn|th|years|yrs|yoe)\b", t_lower)
+        gt_match = re.search(r"(?:pengalaman|experience)\s*[:\s]*(\d+)\s*(?:tahun|thn|th|years?|yrs|yoe)\b", t_lower)
 
     if gt_match:
         years = float(gt_match.group(1))
