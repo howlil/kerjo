@@ -1,0 +1,58 @@
+version: '3'
+
+tasks:
+  default:
+    desc: Jalankan API dan Web frontend dev server secara bersamaan
+    cmds:
+      - task: dev
+
+  dev:
+    desc: Jalankan Python API server dan Vite frontend dev server (HMR hot-reload)
+    deps:
+      - api
+      - web
+
+  api:
+    desc: Jalankan Python API server di port 8000
+    env:
+      PYTHONPATH: apps/api
+    cmds:
+      - python -m jobhunt serve --port 8000
+
+  web:
+    desc: Jalankan Vite dev server di port 5173
+    dir: apps/web
+    cmds:
+      - npm run dev
+
+  serve:
+    desc: Jalankan unified production server (serve dist UI + API di port 8000)
+    env:
+      PYTHONPATH: apps/api
+    cmds:
+      - python -m jobhunt serve --port 8000
+
+  build:
+    desc: Build frontend Svelte ke apps/web/dist
+    dir: apps/web
+    cmds:
+      - npm run build
+
+  test:
+    desc: Jalankan semua unit test backend
+    env:
+      PYTHONPATH: apps/api
+    cmds:
+      - python -m unittest discover -s apps/api/tests -p "test_*.py"
+
+  scrape:
+    desc: 'Jalankan scraping manual sekali via CLI (contoh: task scrape -- --keyword "golang")'
+    env:
+      PYTHONPATH: apps/api
+    cmds:
+      - python -m jobhunt run {{.CLI_ARGS}}
+
+  schedule:
+    desc: Daftarkan otomatisasi tiap jam ke Windows Task Scheduler
+    cmds:
+      - powershell -ExecutionPolicy Bypass -File scripts/schedule.ps1
