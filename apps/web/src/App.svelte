@@ -87,6 +87,11 @@
   let showRecruiterImport = $state(false);
   let importingPost = $state(false);
   let recruiterPost = $state({post_url:'',text:'',title:'',company:'',location:'',posted_at:'',apply_url:''});
+  let showAtsBoards = $state(false);
+  let atsBoards = $state([]);
+  let newAtsProvider = $state('ashby');
+  let newAtsSlug = $state('');
+  let savingAtsBoard = $state(false);
   let newKeyword = $state('');
   let newArea = $state('all');
   let newSources = $state({
