@@ -1,4 +1,7 @@
 @echo off
-cd /d "C:\Users\howlil\Documents\Projects\job"
+setlocal
+cd /d "%~dp0.."
+if not exist data mkdir data
 set PYTHONPATH=apps\api
-"C:\Users\howlil\AppData\Local\Programs\Python\Python312\python.exe" -m jobhunt run >> "C:\Users\howlil\Documents\Projects\job\data\cron.log" 2>&1
+python -m jobhunt run >> data\cron.log 2>&1
+exit /b %errorlevel%

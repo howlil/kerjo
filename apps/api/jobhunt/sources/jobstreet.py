@@ -34,7 +34,7 @@ def parse_jobstreet_payload(data: dict) -> list[Job]:
 
         # Extract locations
         loc_labels = [l.get("label", "").strip() for l in item.get("locations", []) if l.get("label")]
-        loc_str = ", ".join(loc_labels) if loc_labels else "Jakarta"
+        loc_str = ", ".join(loc_labels) if loc_labels else ""
 
         area = match_area(loc_str)
         if area is None:
@@ -75,6 +75,7 @@ def parse_jobstreet_payload(data: dict) -> list[Job]:
                 salary=salary,
                 work_type=work_type_str,
                 is_remote=is_remote,
+                work_mode=("remote" if any("remote" in str(a).lower() for a in arrangements) else "hybrid" if any("hybrid" in str(a).lower() for a in arrangements) else "unknown"),
                 posted_at=posted_at,
                 description=desc,
                 company_logo=company_logo,
@@ -112,6 +113,8 @@ def fetch_jobstreet(keyword: str, where: str = "Jakarta Raya", page: int = 1, pa
                     error_message=f"HTTP status {response.status}",
                 )
             payload = json.loads(response.read().decode("utf-8"))
+            if not isinstance(payload, dict) or not isinstance(payload.get("data"), list):
+                return SourceResult(source="jobstreet", success=False, jobs=[], error_message="Unexpected provider schema")
             jobs = parse_jobstreet_payload(payload)
             return SourceResult(source="jobstreet", success=True, jobs=jobs)
     except urllib.error.HTTPError as e:

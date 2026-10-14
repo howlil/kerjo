@@ -21,6 +21,7 @@ class Job:
     experience_raw: Optional[str] = None
     role_category: Optional[str] = None
     company_logo: Optional[str] = None
+    work_mode: Optional[str] = None
 
     def to_dict(self):
         return asdict(self)

@@ -36,7 +36,7 @@ def parse_kalibrr_payload(data: dict) -> list[Job]:
         line1 = addr.get("address_line_1", "")
 
         loc_parts = [p for p in [line1, city, region] if p]
-        loc_str = ", ".join(loc_parts) if loc_parts else "Jakarta"
+        loc_str = ", ".join(loc_parts) if loc_parts else ""
 
         area = match_area(loc_str)
         if area is None:
@@ -84,6 +84,7 @@ def parse_kalibrr_payload(data: dict) -> list[Job]:
                 salary=salary,
                 work_type=work_type,
                 is_remote=is_remote,
+                work_mode=("remote" if item.get("is_work_from_home") else "hybrid" if item.get("is_hybrid") else "unknown"),
                 posted_at=posted_at,
                 description=desc or None,
                 company_logo=company_logo,
@@ -120,6 +121,8 @@ def fetch_kalibrr(keyword: str, limit: int = 30, offset: int = 0, retries: int =
                         error_message=f"HTTP status {response.status}",
                     )
                 payload = json.loads(response.read().decode("utf-8"))
+                if not isinstance(payload, dict) or not isinstance(payload.get("jobs"), list):
+                    return SourceResult(source="kalibrr", success=False, jobs=[], error_message="Unexpected provider schema")
                 jobs = parse_kalibrr_payload(payload)
                 return SourceResult(source="kalibrr", success=True, jobs=jobs)
         except urllib.error.HTTPError as e:

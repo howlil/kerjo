@@ -262,12 +262,13 @@ def is_strictly_technical_role(title: str, description: Optional[str] = None) ->
     # Step 1: Check Exclusions
     for exc_pattern in NON_TECHNICAL_EXCLUSIONS:
         if re.search(exc_pattern, t_lower):
-            # Special protection: "Product Engineer" contains "Product", but should NOT be rejected by general product patterns
-            if "product engineer" in t_lower and not re.search(r"\bproduct manager\b", t_lower):
-                break
             return False, None, f"Excluded by rule: {exc_pattern}"
 
-    # Step 2: Positive match on title
+    # Step 2: Prefer explicit fullstack titles over incidental backend/frontend stack mentions.
+    if any(re.search(p, t_lower) for p in (r"\bfullstack\b", r"\bfull-stack\b", r"\bfull stack\b")):
+        return True, "fullstack", None
+
+    # Step 3: Positive match on title
     for role_cat, patterns in TECHNICAL_ROLE_PATTERNS:
         for pat in patterns:
             if re.search(pat, t_lower):
@@ -320,14 +321,15 @@ def extract_experience(text: str) -> Dict[str, Any]:
         r"\bno\s*experience\b",
         r"\bentry\s*level\b",
     ]
-    for pat in fresh_patterns:
-        if re.search(pat, t_lower):
-            return {
-                "level": "entry",
-                "min_years": 0,
-                "max_years": 1,
-                "raw": "0 - 1 tahun (Fresh Grad)",
-            }
+    fresh_signal = any(re.search(pat, t_lower) for pat in fresh_patterns)
+    # Numeric requirements take precedence over promotional 'fresh graduates welcome'.
+    if fresh_signal and not re.search(r"(?:\bmin(?:imal)?\b|\bat least\b|\b[3-9]\+?\s*(?:years|tahun)\b)", t_lower):
+        return {
+            "level": "entry",
+            "min_years": 0,
+            "max_years": 1,
+            "raw": "0 - 1 tahun (Fresh Grad)",
+        }
 
     # 2. Year ranges e.g. "0 - 1 tahun", "0 - 2 years", "1 - 3 years", "2 - 4 thn"
     range_match = re.search(
@@ -421,7 +423,7 @@ def classify_job(title: str, description: Optional[str] = None) -> Dict[str, Any
     max_years = exp["max_years"]
     raw = exp["raw"]
 
-    if has_junior_title:
+    if has_junior_title and (min_years is None or min_years <= 2):
         level = "entry"
         if not raw:
             raw = "Junior / Entry Level"

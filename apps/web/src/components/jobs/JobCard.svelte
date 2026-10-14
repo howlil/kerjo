@@ -19,6 +19,12 @@
     <div class="job-record-tags">
       <Badge>{job.sources?.length > 1 ? job.sources.length + ' SITUS' : (job.source || 'PORTAL').toUpperCase()}</Badge>
       <Badge>{formatRole(job.role_category)}</Badge>
+      {#if job.match && job.match.score > 0}
+        <Badge>{job.match.score}/100 MATCH</Badge>
+      {/if}
+      {#if job.application_status && job.application_status !== 'not_applied'}
+        <Badge>{job.application_status.toUpperCase()}</Badge>
+      {/if}
       {#if job.experience_level && job.experience_level !== 'unspecified'}
         <Badge tone="accent">{job.experience_level.toUpperCase()}</Badge>
       {/if}

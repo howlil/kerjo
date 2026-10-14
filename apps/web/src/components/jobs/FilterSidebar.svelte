@@ -64,4 +64,4 @@
     {/if}
   </section>
 </div>
-<div class="filter-footer"><span class="status-dot"></span> CRONJOB · PENCARIAN OTOMATIS</div>
+<div class="filter-footer"><span class="status-dot"></span> SAVED SEARCHES · JADWAL BELUM DIVERIFIKASI</div>

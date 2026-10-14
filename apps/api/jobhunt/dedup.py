@@ -2,7 +2,7 @@ import re
 from typing import List, Dict, Any, Set
 
 COMPANY_STOPWORDS = {"pt", "cv", "tbk", "inc", "corp", "corporation", "ltd", "limited", "llc", "group", "indonesia", "jaya"}
-TITLE_STOPWORDS = {"and", "or", "the", "a", "an", "full", "time", "part", "intern", "internship", "remote", "wfh", "hybrid", "on", "site", "onsite", "in", "at", "for"}
+TITLE_STOPWORDS = {"and", "or", "the", "a", "an", "full", "time", "part", "remote", "wfh", "hybrid", "on", "site", "onsite", "in", "at", "for"}
 
 def get_company_tokens(name: str) -> List[str]:
     if not name:
@@ -18,7 +18,7 @@ def get_title_tokens(title: str) -> Set[str]:
 
 def normalize_key(company: str, title: str) -> str:
     c_tokens = get_company_tokens(company)
-    c_key = c_tokens[0] if c_tokens else clean_fallback(company)
+    c_key = " ".join(c_tokens) if c_tokens else clean_fallback(company)
     t_tokens = sorted(get_title_tokens(title))
     t_key = " ".join(t_tokens) if t_tokens else clean_fallback(title)
     return f"{c_key}::{t_key}"
@@ -32,7 +32,14 @@ def group_dedup_jobs(jobs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     order: List[str] = []
 
     for job in jobs:
+        # Never merge distinct employment types or geographies solely on a shared title.
         key = normalize_key(job.get("company", ""), job.get("title", ""))
+        mode = (job.get("work_mode") or "unknown").lower()
+        area = job.get("area") or "unspecified"
+        if area != "unspecified":
+            key += "::" + area
+        if mode != "unknown":
+            key += "::" + mode
         src = job.get("source", "unknown")
 
         if key not in grouped_map:

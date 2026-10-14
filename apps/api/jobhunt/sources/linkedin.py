@@ -35,7 +35,7 @@ def parse_linkedin_html(html_text: str) -> list[Job]:
 
         # Location
         loc_m = re.search(r'<span[^>]*job-search-card__location[^>]*>\s*(.*?)\s*</span>', card, re.S)
-        loc_str = html.unescape(loc_m.group(1)).strip() if loc_m else "Jakarta"
+        loc_str = html.unescape(loc_m.group(1)).strip() if loc_m else ""
 
         area = match_area(loc_str)
         if area is None:
@@ -77,6 +77,7 @@ def parse_linkedin_html(html_text: str) -> list[Job]:
                 salary=None,
                 work_type=None,
                 is_remote=is_remote,
+                work_mode=("remote" if "remote" in (title + " " + loc_str).lower() else "hybrid" if "hybrid" in (title + " " + loc_str).lower() else "unknown"),
                 posted_at=posted_at,
                 description=desc,
                 company_logo=company_logo,
@@ -112,6 +113,10 @@ def fetch_linkedin(keyword: str, location: str = "Jakarta, Indonesia", start: in
                 )
             html_content = response.read().decode("utf-8", "replace")
             jobs = parse_linkedin_html(html_content)
+            if not jobs and any(marker in html_content.lower() for marker in
+                                ("captcha", "security verification", "challenge", "base-search-card")):
+                return SourceResult(source="linkedin", success=False, jobs=[],
+                                    error_message="Blocked or LinkedIn parser structure changed")
             return SourceResult(source="linkedin", success=True, jobs=jobs)
     except urllib.error.HTTPError as e:
         status_desc = "Rate-limited / blocked" if e.code in (429, 403) else e.reason
