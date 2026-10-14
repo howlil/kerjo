@@ -102,18 +102,27 @@ class JobhuntRequestHandler(http.server.BaseHTTPRequestHandler):
                     limit=None,
                 )
                 results = group_dedup_jobs(raw) if should_dedup else raw
-                self.features.annotate(results)
-                if query.get("saved", ["0"])[0] in ("1", "true"):
-                    results = [j for j in results if j["is_saved"]]
+                saved_only = query.get("saved", ["0"])[0] in ("1", "true")
                 application_filter = query.get("application_status", [None])[0]
-                if application_filter and application_filter != "all":
-                    results = [j for j in results if j["application_status"] == application_filter]
-                if query.get("sort", ["recent"])[0] == "match":
-                    results.sort(key=lambda j: (j["match"]["eligibility"] != "mismatch",
-                                                 j["match"]["score"],
-                                                 j.get("first_seen_at") or ""), reverse=True)
+                sort_by_match = query.get("sort", ["recent"])[0] == "match"
+                # Only rank and annotate the whole dataset when needed for
+                # global filtering/sorting. Recent/default mode annotates one page.
+                globally = saved_only or (application_filter and application_filter != "all") or sort_by_match
+                if globally:
+                    self.features.annotate(results)
+                    if saved_only:
+                        results = [j for j in results if j["is_saved"]]
+                    if application_filter and application_filter != "all":
+                        results = [j for j in results if j["application_status"] == application_filter]
+                    if sort_by_match:
+                        results.sort(key=lambda j: (j["match"]["eligibility"] != "mismatch",
+                                                     j["match"]["score"],
+                                                     j.get("first_seen_at") or ""), reverse=True)
                 total = len(results)
-                self._send_json({"jobs": results[offset:offset+limit], "total": total, "limit": limit, "offset": offset})
+                page = results[offset:offset + limit]
+                if not globally:
+                    self.features.annotate(page)
+                self._send_json({"jobs": page, "total": total, "limit": limit, "offset": offset})
                 return
             if path == "/api/companies":
                 self._send_json({"companies": self.db.get_companies(limit=200)})
