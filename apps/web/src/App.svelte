@@ -622,9 +622,7 @@
 .app-notice button{background:none;border:0;color:var(--color-text-secondary);cursor:pointer}
 @media(max-width:1020px){.app-context,.app-divider{display:none}.app-view-tabs button{font-size:10px;padding:6px}}
 @media(max-width:680px){.app-view-tabs{gap:0}.app-view-tabs button{font-size:9px;padding:5px}.app-status,.results-sort-label{display:none}.results-sort{min-width:73px;width:75px}.app-brand-name{display:none}}
-</style>
 
-<style>
 .results-pagination{display:flex;gap:14px;align-items:center;justify-content:center;flex-shrink:0;padding:10px;border-top:1px solid var(--color-border);font-size:11px;color:var(--color-text-secondary)}
 .results-pagination button{cursor:pointer;color:var(--color-text-heading);font-size:11px;padding:5px 9px;border:1px solid var(--color-border);border-radius:var(--radius-md);background:var(--color-surface)}
 .results-pagination button:disabled{opacity:.35;cursor:not-allowed}
