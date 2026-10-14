@@ -47,11 +47,11 @@ def clean_text(value):
         return ""
     for _ in range(2):
         value = html.unescape(value)
-    if "<" in value and re.search(r"</?(?:p|div|li|br|ul|ol|h[1-6])\\b", value, re.I):
+    if "<" in value and re.search(r"</?(?:p|div|li|br|ul|ol|h[1-6])\b", value, re.I):
         value = html_to_text(value)
-    value = re.sub(r"[ \\t]+", " ", value)
-    value = re.sub(r" *\\n *", "\\n", value)
-    return re.sub(r"\\n{3,}", "\\n\\n", value).strip()[:30000]
+    value = re.sub(r"[ \t]+", " ", value)
+    value = re.sub(r" *\n *", "\n", value)
+    return re.sub(r"\n{3,}", "\n\n", value).strip()[:30000]
 
 
 class TextOnly(HTMLParser):
@@ -64,13 +64,13 @@ class TextOnly(HTMLParser):
         if tag in ("script", "style", "noscript", "svg"):
             self.hidden += 1
         if not self.hidden and tag in ("p", "div", "li", "br", "h1", "h2", "h3", "h4"):
-            self.parts.append("\\n")
+            self.parts.append("\n")
 
     def handle_endtag(self, tag):
         if tag in ("script", "style", "noscript", "svg") and self.hidden:
             self.hidden -= 1
         elif not self.hidden and tag in ("p", "li", "div", "h1", "h2", "h3", "h4"):
-            self.parts.append("\\n")
+            self.parts.append("\n")
 
     def handle_data(self, data):
         if not self.hidden:
@@ -135,7 +135,7 @@ class JobDetailHTML(HTMLParser):
         if tag == "meta" and (a.get("itemprop") or "").lower() == "dateposted":
             self.date_posted = a.get("content") or self.date_posted
         if tag in ("p", "li", "br", "h2", "h3", "h4") and self.target_depth is not None:
-            self.target_text.append("\\n")
+            self.target_text.append("\n")
 
     def handle_startendtag(self, tag, attrs):
         self.handle_starttag(tag, attrs)
