@@ -21,7 +21,7 @@ class TestExtendedAPI(unittest.TestCase):
             Job(source="jobstreet",external_id="1",title="Backend Engineer",company="Acme",
                 location_raw="Jakarta Selatan",area="jakarta_selatan",url="https://example.org/a"),
             Job(source="linkedin",external_id="2",title="Backend Engineer",company="Acme",
-                location_raw="Jakarta Selatan",area="jakarta_selatan",url="https://example.org/b"),
+                location_raw="Jakarta Selatan",area="jakarta_selatan",url="https://example.org/a?utm_source=linkedin"),
             Job(source="jobstreet",external_id="3",title="Frontend Developer",company="Acme",
                 location_raw="Jakarta Selatan",area="jakarta_selatan",url="https://example.org/c"),
         ])
