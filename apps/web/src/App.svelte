@@ -437,7 +437,7 @@
   });
 </script>
 
-<WorkspaceShell filterOpen={mobileFilterOpen} detailOpen={mobileDetailOpen} onDismiss={() => { mobileFilterOpen = false; mobileDetailOpen = false; }}>
+<WorkspaceShell mode={currentView} filterOpen={mobileFilterOpen} detailOpen={mobileDetailOpen} onDismiss={() => { mobileFilterOpen = false; mobileDetailOpen = false; }}>
   {#snippet header()}
     <a class="app-brand" href="/" aria-label="Kerjo home">
       <span class="app-brand-mark"><Icon name="briefcase" size={17}/></span>
@@ -445,13 +445,24 @@
     </a>
     <span class="app-divider"></span>
     <span class="app-context">JOB DISCOVERY / JAKARTA</span>
+    <nav class="app-view-tabs" aria-label="Kerjo views">
+      {#each [{id:'discovery',title:'Discover'},{id:'applications',title:'Applications'},{id:'preferences',title:'Preferences'}] as view}
+        <button type="button" class:is-active={currentView===view.id}
+          onclick={()=>{currentView=view.id;mobileFilterOpen=false;mobileDetailOpen=false;
+            if(view.id==='applications')loadApplications();
+            if(view.id==='preferences')loadSourceHealth();}}
+          aria-current={currentView===view.id?'page':undefined}>{view.title}</button>
+      {/each}
+    </nav>
     <div class="app-actions">
-      <span class="app-status">{searches.length} auto-search tersimpan</span>
+      <span class="app-status">{runningScraper && currentRun ? 'Worker '+(currentRun.processed_tasks||0)+'/'+(currentRun.total_tasks||'?') : searches.length+' auto-search'}</span>
       <button class="ui-icon-button" type="button" onclick={toggleTheme} title={theme === 'dark' ? 'Light mode' : 'Dark mode'} aria-label="Ganti tema">
         <Icon name={theme === 'dark' ? 'sun' : 'moon'} size={16}/>
       </button>
+      {#if currentView==='discovery'}
       <span class="desktop-action"><Button onclick={markAllSeen}><Icon name="checkCircle" size={14}/>Tandai dilihat</Button></span>
       <Button onclick={() => showAddSearch = true}><Icon name="plus" size={14}/><span class="desktop-action">Tambah pencarian</span></Button>
+      {/if}
       <Button variant="primary" disabled={runningScraper} onclick={triggerRun}><Icon name="refresh" size={14}/><span>{runningScraper ? 'Scraping…' : 'Scrape sekarang'}</span></Button>
     </div>
   {/snippet}
@@ -495,9 +506,14 @@
     </div>
     <div class="results-toolbar">
       <strong>{showSavedOnly ? 'Saved positions' : selectedRole === 'all' ? 'All positions' : roleCategories.find(r => r.id === selectedRole)?.label}</strong>
-      <span class="results-count">{loading ? 'Memuat…' : visibleJobs.length + ' ditampilkan'}</span>
+      <span class="results-count">{loading ? 'Memuat…' : visibleJobs.length + ' dari ' + jobsTotal}</span>
       <div class="results-actions">
-        <button type="button" class="ui-icon-button" class:is-active={showSavedOnly} onclick={() => showSavedOnly = !showSavedOnly} aria-pressed={showSavedOnly} title="Hanya simpanan lokal" aria-label="Tampilkan posisi tersimpan"><Icon name="bookmark" size={16}/></button>
+        <label for="results-sort" class="results-sort-label">Sort</label>
+        <select id="results-sort" class="ui-input results-sort" bind:value={sortMode} onchange={loadJobs}>
+          <option value="recent">Recent</option>
+          <option value="match">Best match</option>
+        </select>
+        <button type="button" class="ui-icon-button" class:is-active={showSavedOnly} onclick={() => {showSavedOnly = !showSavedOnly;loadJobs();}} aria-pressed={showSavedOnly} title="Hanya lowongan tersimpan" aria-label="Tampilkan posisi tersimpan"><Icon name="bookmark" size={16}/></button>
         <div class="view-segments" aria-label="Mode tampilan">
           <button type="button" aria-label="Grid view" aria-pressed={displayMode === 'grid'} onclick={() => displayMode = 'grid'}><Icon name="grid" size={14}/></button>
           <button type="button" aria-label="List view" aria-pressed={displayMode === 'list'} onclick={() => displayMode = 'list'}><Icon name="list" size={14}/></button>
@@ -515,7 +531,7 @@
             <JobCard
               {job}
               selected={activeJob?.id === job.id}
-              saved={savedIds.includes(job.id)}
+              saved={Boolean(job.is_saved)}
               onSelect={chooseJob}
               onSave={toggleSaved}
               {formatRole}
@@ -531,16 +547,31 @@
   {#snippet inspector()}
     <JobInspector
       job={activeJob}
-      saved={activeJob ? savedIds.includes(activeJob.id) : false}
+      saved={Boolean(activeJob?.is_saved)}
       onClose={() => { activeJob = null; mobileDetailOpen = false; }}
       onCompany={filterByCompany}
       onSeen={markJobSeen}
       onSave={toggleSaved}
+      onApply={updateApplication}
       {formatRole}
       {formatArea}
     />
   {/snippet}
+  {#snippet full()}
+    {#if currentView === 'applications'}
+      <ApplicationPipeline {applications} onStatusChange={updatePipelineStatus} {formatTime}/>
+    {:else if currentView === 'preferences'}
+      <PreferencePanel {preferences} roles={roleCategories} {areas} sources={sourceHealth}
+        onChange={(next)=>preferences=next} onSave={savePreferences} {formatTime}/>
+    {/if}
+  {/snippet}
 </WorkspaceShell>
+{#if notice}
+  <div class="app-notice" role="status">
+    <span>{notice}</span>
+    <button type="button" onclick={()=>notice=''} aria-label="Tutup notifikasi"><Icon name="x" size={14}/></button>
+  </div>
+{/if}
 
 {#if showAddSearch}
   <div class="ui-modal-backdrop" role="presentation">
@@ -574,3 +605,16 @@
     </section>
   </div>
 {/if}
+
+<style>
+.app-view-tabs{display:flex;align-items:center;gap:3px;margin-left:auto;flex-shrink:0}
+.app-view-tabs button{padding:6px 9px;border-radius:var(--radius-md);color:var(--color-text-secondary);font-size:11px;font-weight:650;cursor:pointer;white-space:nowrap}
+.app-view-tabs button:hover{background:var(--color-surface-hover)}
+.app-view-tabs button.is-active{background:var(--color-text-heading);color:var(--color-page)}
+.results-sort{font-size:11px;min-width:100px;max-width:130px;padding:5px 8px}
+.results-sort-label{font-size:11px;color:var(--color-text-muted)}
+.app-notice{position:fixed;right:16px;bottom:16px;z-index:100;padding:12px 15px;border:1px solid var(--color-border-strong);border-radius:var(--radius-md);background:var(--color-surface);box-shadow:0 4px 18px rgba(0,0,0,.12);max-width:350px;color:var(--color-text-heading);font-size:12px;display:flex;align-items:center;gap:12px}
+.app-notice button{background:none;border:0;color:var(--color-text-secondary);cursor:pointer}
+@media(max-width:1020px){.app-context,.app-divider{display:none}.app-view-tabs button{font-size:10px;padding:6px}}
+@media(max-width:680px){.app-view-tabs{gap:0}.app-view-tabs button{font-size:9px;padding:5px}.app-status,.results-sort-label{display:none}.results-sort{min-width:73px;width:75px}.app-brand-name{display:none}}
+</style>
