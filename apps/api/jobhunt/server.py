@@ -100,6 +100,7 @@ class JobhuntRequestHandler(http.server.BaseHTTPRequestHandler):
                     role_category=query.get("role_category", [None])[0],
                     company=query.get("company", [None])[0],
                     limit=None,
+                    posted_within_days=14,
                 )
                 results = group_dedup_jobs(raw) if should_dedup else raw
                 saved_only = query.get("saved", ["0"])[0] in ("1", "true")
@@ -122,10 +123,10 @@ class JobhuntRequestHandler(http.server.BaseHTTPRequestHandler):
                 page = results[offset:offset + limit]
                 if not globally:
                     self.features.annotate(page)
-                self._send_json({"jobs": page, "total": total, "limit": limit, "offset": offset})
+                self._send_json({"jobs": page, "total": total, "limit": limit, "offset": offset, "max_post_age_days": 14})
                 return
             if path == "/api/companies":
-                self._send_json({"companies": self.db.get_companies(limit=200)})
+                self._send_json({"companies": self.db.get_companies(limit=200, posted_within_days=14)})
                 return
             if path == "/api/searches":
                 self._send_json({"searches": self.db.get_searches()})
@@ -305,7 +306,8 @@ class JobhuntRequestHandler(http.server.BaseHTTPRequestHandler):
 
 
 def execute_batch(db, features, gate, run_id, keyword=None, area="all", sources=None):
-    stats = {"total_tasks": 0, "processed_tasks": 0, "jobs_found": 0, "jobs_new": 0, "errors": 0}
+    stats = {"total_tasks": 0, "processed_tasks": 0, "jobs_found": 0, "jobs_new": 0, "errors": 0,
+             "jobs_recent": 0, "filtered_old": 0, "filtered_unknown": 0, "filtered_future": 0}
     try:
         features.update_batch(run_id, status="running", started_at=utc_now())
         def progress(result, done, total):
@@ -314,6 +316,10 @@ def execute_batch(db, features, gate, run_id, keyword=None, area="all", sources=
             if result:
                 stats["jobs_found"] += result["found_count"]
                 stats["jobs_new"] += result["new_count"]
+                stats["jobs_recent"] += result.get("recent_count", 0)
+                stats["filtered_old"] += result.get("filtered_old", 0)
+                stats["filtered_unknown"] += result.get("filtered_unknown", 0)
+                stats["filtered_future"] += result.get("filtered_future", 0)
                 if result["status"] != "success":
                     stats["errors"] += 1
             features.update_batch(run_id, **stats)
