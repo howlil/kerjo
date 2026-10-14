@@ -5,7 +5,7 @@ import time
 from typing import Dict, Callable, List, Any, Optional
 from jobhunt.db import Database
 from jobhunt.models import Job, SourceResult
-from jobhunt.freshness import posting_age_status
+from jobhunt.freshness import posting_age_status, parse_posted_at
 from jobhunt.sources.jobstreet import fetch_jobstreet
 from jobhunt.sources.kalibrr import fetch_kalibrr
 from jobhunt.sources.linkedin import fetch_linkedin
@@ -241,6 +241,8 @@ class JobRunner:
             age = posting_age_status(job.posted_at)
             age_counts[age] += 1
             if age == "recent":
+                # Persist normalized timezone-aware UTC for deterministic sorting.
+                job.posted_at = parse_posted_at(job.posted_at).isoformat()
                 recent_jobs.append(job)
 
         new_count, _ = self.db.upsert_jobs(recent_jobs)
