@@ -30,7 +30,7 @@ def parse_dealls_payload(data: dict) -> list[Job]:
         country_name = country_obj.get("name") or ""
 
         loc_parts = [p for p in [city_name, country_name] if p]
-        loc_str = ", ".join(loc_parts) if loc_parts else "Jakarta"
+        loc_str = ", ".join(loc_parts) if loc_parts else ""
 
         area = match_area(loc_str)
         if area is None:
@@ -74,6 +74,7 @@ def parse_dealls_payload(data: dict) -> list[Job]:
                 salary=salary,
                 work_type=work_type,
                 is_remote=is_remote,
+                work_mode=wp if wp in ("remote", "hybrid", "onsite") else "unknown",
                 posted_at=posted_at,
                 description=desc or None,
                 company_logo=company_logo,
@@ -107,6 +108,8 @@ def fetch_dealls(keyword: str, page: int = 1, limit: int = 30) -> SourceResult:
                     error_message=f"HTTP status {response.status}",
                 )
             payload = json.loads(response.read().decode("utf-8"))
+            if not isinstance(payload, dict) or not isinstance((payload.get("data") or {}).get("docs"), list):
+                return SourceResult(source="dealls", success=False, jobs=[], error_message="Unexpected provider schema")
             jobs = parse_dealls_payload(payload)
             return SourceResult(source="dealls", success=True, jobs=jobs)
     except urllib.error.HTTPError as e:

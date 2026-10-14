@@ -36,7 +36,7 @@ def parse_glints_payload(data: dict) -> list[Job]:
         loc_name = loc.get("name") or ""
         loc_parents = [p.get("name") for p in loc.get("parents") or [] if p.get("name")]
         loc_parts = [p for p in [loc_name] + loc_parents if p]
-        loc_str = ", ".join(loc_parts) if loc_parts else "Jakarta"
+        loc_str = ", ".join(loc_parts) if loc_parts else ""
 
         area = match_area(loc_str)
         if area is None:
@@ -82,6 +82,7 @@ def parse_glints_payload(data: dict) -> list[Job]:
                 salary=salary,
                 work_type=work_type,
                 is_remote=is_remote,
+                work_mode=arrangement.lower() if arrangement in ("REMOTE", "HYBRID", "ONSITE") else "unknown",
                 posted_at=posted_at,
                 description=desc or None,
                 company_logo=company_logo,
@@ -123,6 +124,8 @@ def fetch_glints(keyword: str, country: str = "ID") -> SourceResult:
                     error_message="Could not find __NEXT_DATA__ in page",
                 )
             payload = json.loads(m.group(1))
+            if not isinstance((payload.get("props") or {}).get("pageProps"), dict) or "initialJobs" not in payload["props"]["pageProps"]:
+                return SourceResult(source="glints", success=False, jobs=[], error_message="Unexpected provider schema")
             jobs = parse_glints_payload(payload)
             return SourceResult(source="glints", success=True, jobs=jobs)
     except urllib.error.HTTPError as e:

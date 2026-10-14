@@ -28,7 +28,7 @@ def parse_tia_payload(data: dict) -> list[Job]:
 
         city_obj = item.get("city") or {}
         city_name = city_obj.get("name") or ""
-        loc_str = city_name if city_name else "Jakarta"
+        loc_str = city_name if city_name else ""
 
         area = match_area(loc_str)
         if area is None:
@@ -69,6 +69,7 @@ def parse_tia_payload(data: dict) -> list[Job]:
                 salary=salary,
                 work_type=work_type,
                 is_remote=is_remote,
+                work_mode=("remote" if is_remote else str(work_type or "unknown").lower() if str(work_type or "").lower() in ("onsite","hybrid") else "unknown"),
                 posted_at=posted_at,
                 description=desc or None,
                 company_logo=company_logo,
@@ -92,8 +93,6 @@ def fetch_techinasia(keyword: str, page: int = 1, limit: int = 25) -> SourceResu
     )
 
     ctx = ssl.create_default_context()
-    ctx.check_hostname = False
-    ctx.verify_mode = ssl.CERT_NONE
 
     try:
         with urllib.request.urlopen(req, context=ctx, timeout=30) as response:
@@ -105,6 +104,8 @@ def fetch_techinasia(keyword: str, page: int = 1, limit: int = 25) -> SourceResu
                     error_message=f"HTTP status {response.status}",
                 )
             payload = json.loads(response.read().decode("utf-8"))
+            if not isinstance(payload.get("data"), list):
+                return SourceResult(source="techinasia", success=False, jobs=[], error_message="Unexpected provider schema")
             jobs = parse_tia_payload(payload)
             return SourceResult(source="techinasia", success=True, jobs=jobs)
     except urllib.error.HTTPError as e:

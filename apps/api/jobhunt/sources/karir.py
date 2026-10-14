@@ -55,6 +55,7 @@ def parse_karir_payload(data: dict) -> list[Job]:
                 salary=salary,
                 work_type=None,
                 is_remote=False,
+                work_mode="unknown",
                 posted_at=posted_at,
                 description=desc or None,
                 company_logo=company_logo,
@@ -96,6 +97,8 @@ def fetch_karir(keyword: str, page: int = 1, limit: int = 30) -> SourceResult:
                     error_message=f"HTTP status {response.status}",
                 )
             payload_data = json.loads(response.read().decode("utf-8"))
+            if not isinstance((payload_data.get("data") or {}).get("opportunities"), list):
+                return SourceResult(source="karir", success=False, jobs=[], error_message="Unexpected provider schema")
             jobs = parse_karir_payload(payload_data)
             return SourceResult(source="karir", success=True, jobs=jobs)
     except urllib.error.HTTPError as e:

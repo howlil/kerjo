@@ -17,6 +17,7 @@ class Database:
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA journal_mode = WAL")
         conn.execute("PRAGMA foreign_keys = ON")
+        conn.execute("PRAGMA busy_timeout = 5000")
         return conn
 
     def _init_db(self):
@@ -87,6 +88,7 @@ class Database:
                 ("experience_raw", "TEXT"),
                 ("role_category", "TEXT DEFAULT 'other'"),
                 ("company_logo", "TEXT"),
+                ("work_mode", "TEXT DEFAULT 'unknown'"),
             ]
             for col_name, col_def in migrations:
                 if col_name not in existing_cols:
@@ -164,7 +166,11 @@ class Database:
             existing = conn.execute("SELECT count(*) FROM searches").fetchone()[0]
             if existing == 0:
                 for kw, area in default_searches:
-                    self.create_search(keyword=kw, area=area)
+                    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+                conn.execute(
+                    "INSERT INTO searches(keyword, area, sources, is_active, created_at, updated_at) VALUES(?, ?, ?, 1, ?, ?)",
+                    (kw, area, "jobstreet,kalibrr,linkedin,glints,dealls", now, now)
+                )
 
     # ---------------- Job Queries & Upsert ----------------
     def upsert_jobs(self, jobs: List[Job]) -> Tuple[int, int]:
@@ -216,6 +222,7 @@ class Database:
                             salary = COALESCE(?, salary),
                             work_type = COALESCE(?, work_type),
                             is_remote = ?,
+                            work_mode = ?,
                             posted_at = COALESCE(?, posted_at),
                             description = COALESCE(?, description),
                             experience_level = COALESCE(?, experience_level),
@@ -236,6 +243,7 @@ class Database:
                             job.salary,
                             job.work_type,
                             1 if job.is_remote else 0,
+                            job.work_mode or ("remote" if job.is_remote else "unknown"),
                             job.posted_at,
                             job.description,
                             job.experience_level,
@@ -256,8 +264,8 @@ class Database:
                             source, external_id, title, company, location_raw, area, url,
                             salary, work_type, is_remote, posted_at, description,
                             experience_level, min_years, max_years, experience_raw, role_category,
-                            company_logo, is_new, first_seen_at, last_seen_at
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+                            company_logo, work_mode, is_new, first_seen_at, last_seen_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
                         """,
                         (
                             job.source,
@@ -278,6 +286,7 @@ class Database:
                             job.experience_raw,
                             job.role_category,
                             job.company_logo,
+                            job.work_mode or ("remote" if job.is_remote else "unknown"),
                             now,
                             now,
                         ),
@@ -288,6 +297,15 @@ class Database:
     def mark_job_seen(self, job_id: int):
         with self._get_connection() as conn:
             conn.execute("UPDATE jobs SET is_new = 0 WHERE id = ?", (job_id,))
+
+    def mark_jobs_seen(self, job_ids: List[int]) -> int:
+        ids = sorted({i for i in job_ids if type(i) is int and i > 0})
+        if not ids:
+            return 0
+        with self._get_connection() as conn:
+            q = ",".join("?" for _ in ids)
+            cursor = conn.execute(f"UPDATE jobs SET is_new=0 WHERE id IN ({q})", ids)
+            return cursor.rowcount
 
     def mark_all_seen(self):
         with self._get_connection() as conn:
@@ -302,7 +320,7 @@ class Database:
         experience_level: Optional[str] = None,
         role_category: Optional[str] = None,
         company: Optional[str] = None,
-        limit: int = 100,
+        limit: Optional[int] = 100,
         offset: int = 0,
     ) -> List[Dict[str, Any]]:
         sql = "SELECT * FROM jobs WHERE 1=1"
@@ -344,8 +362,10 @@ class Database:
             pat = f"%{query_text}%"
             params.extend([pat, pat, pat, pat])
 
-        sql += " ORDER BY is_new DESC, COALESCE(posted_at, first_seen_at) DESC LIMIT ? OFFSET ?"
-        params.extend([limit, offset])
+        sql += " ORDER BY is_new DESC, COALESCE(posted_at, first_seen_at) DESC, id DESC"
+        if limit is not None:
+            sql += " LIMIT ? OFFSET ?"
+            params.extend([max(1, min(int(limit), 100000)), max(0, int(offset))])
 
         with self._get_connection() as conn:
             rows = conn.execute(sql, params).fetchall()

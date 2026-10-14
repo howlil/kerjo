@@ -26,7 +26,9 @@ tasks:
       - npm run dev
 
   serve:
-    desc: Jalankan unified production server (serve dist UI + API di port 8000)
+    desc: Build frontend terbaru lalu jalankan unified API + UI di port 8000
+    deps:
+      - build
     env:
       PYTHONPATH: apps/api
     cmds:
@@ -63,3 +65,9 @@ tasks:
       PYTHONPATH: apps/api
     cmds:
       - 'python -c "from jobhunt.db import Database; db = Database(); db.reset_database(); print(''Database reset: 0 jobs remain'')"'
+
+  verify:
+    desc: Backend tests + frontend production build
+    cmds:
+      - task: test
+      - task: build
