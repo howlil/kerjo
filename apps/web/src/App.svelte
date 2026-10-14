@@ -25,6 +25,8 @@
   let preferences = $state({role_categories:[], areas:[],work_modes:[],keywords:[],max_required_years:null});
   let currentRun = $state(null);
   let sortMode = $state('recent');
+  const PAGE_SIZE = 60;
+  let currentPage = $state(0);
 
   // UI state is kept separate from the existing server-side API filters.
   let displayMode = $state('grid');
@@ -132,12 +134,18 @@
       if (searchQuery.trim()) params.set('q', searchQuery.trim());
       if (showSavedOnly) params.set('saved','1');
       params.set('sort',sortMode);
-      params.set('limit', '300');
+      params.set('limit', String(PAGE_SIZE));
+      params.set('offset', String(currentPage * PAGE_SIZE));
 
       const res = await fetch(`/api/jobs?${params.toString()}`);
       if (!res.ok) throw new Error('Gagal mengambil lowongan: HTTP ' + res.status);
       const data = await res.json();
       if (requestId !== latestRequest) return;
+      if (!data.jobs?.length && currentPage > 0 && data.total > 0) {
+        currentPage = Math.floor((data.total - 1) / PAGE_SIZE);
+        await loadJobs();
+        return;
+      }
       jobs = data.jobs || [];
       jobsTotal = data.total ?? jobs.length;
       if (!activeJob && jobs.length) activeJob = jobs[0];
@@ -220,11 +228,13 @@
     try {
       const run = (await api('/api/run/' + currentRun.id)).run;
       currentRun = run;
-      if (['completed','partial','failed'].includes(run.status)) {
+      if (['completed','partial','failed','skipped'].includes(run.status)) {
         runningScraper = false;
         notice = run.status === 'completed'
           ? ('Scraping selesai: ' + run.jobs_new + ' lowongan baru')
-          : ('Scraping ' + run.status + ' — ' + run.errors + ' sumber mengalami error');
+          : run.status === 'skipped'
+            ? 'Tidak ada saved search aktif; scraper tidak dijalankan.'
+            : ('Scraping ' + run.status + ' — ' + run.errors + ' sumber mengalami error');
         await Promise.all([loadJobs(),loadRuns(),loadCompanies(),loadSourceHealth()]);
       }
     } catch(e) { runningScraper=false; notice = 'Error saat memantau worker: '+e.message; }
@@ -246,6 +256,7 @@
   function filterByCompany(compName) {
     if (!compName) return;
     selectedCompany = compName;
+    currentPage = 0;
     loadJobs();
   }
 
@@ -255,7 +266,7 @@
       const ids = job.ids?.length ? job.ids : [job.id];
       await api('/api/jobs/seen-all',jsonOptions('POST',{ids}));
       job.is_new = 0;
-      if (onlyNew) await loadJobs();
+      if (onlyNew) { currentPage = 0; await loadJobs(); }
     } catch(e) { notice = 'Gagal menandai dilihat: '+e.message; }
   }
 
@@ -293,48 +304,32 @@
 
   async function toggleSearch(searchId) {
     try {
-      await fetch(`/api/searches/${searchId}/toggle`, { method: 'PUT' });
+      await api('/api/searches/' + searchId + '/toggle',{method:'PUT'});
       await loadSearches();
-    } catch (e) {
-      alert('Gagal toggle: ' + e);
-    }
+    } catch(e) { notice = 'Gagal mengubah saved search: ' + e.message; }
   }
 
   async function deleteSearch(searchId) {
     if (!confirm('Hapus pencarian tersimpan ini?')) return;
     try {
-      await fetch(`/api/searches/${searchId}`, { method: 'DELETE' });
+      await api('/api/searches/' + searchId,{method:'DELETE'});
       await loadSearches();
-    } catch (e) {
-      alert('Gagal menghapus: ' + e);
-    }
+    } catch(e) { notice = 'Gagal menghapus saved search: ' + e.message; }
   }
 
   async function submitNewSearch(e) {
     e.preventDefault();
-    const chosenSources = Object.keys(newSources).filter(k => newSources[k]);
-    if (chosenSources.length === 0) {
-      alert('Pilih minimal satu sumber lowongan.');
-      return;
-    }
+    const sources = Object.keys(newSources).filter(k=>newSources[k]);
+    if (!sources.length) { notice = 'Pilih minimal satu sumber lowongan.'; return; }
     try {
-      await fetch('/api/searches', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          keyword: newKeyword,
-          area: newArea,
-          sources: chosenSources
-        })
-      });
+      await api('/api/searches',jsonOptions('POST',{
+        keyword:newKeyword, area:newArea, sources
+      }));
       newKeyword = '';
       showAddSearch = false;
-      await loadSearches();
-      await loadJobs();
-      await loadCompanies();
-    } catch (e) {
-      alert('Gagal menyimpan pencarian: ' + e);
-    }
+      await Promise.all([loadSearches(),loadJobs(),loadCompanies()]);
+      notice = 'Saved search ditambahkan.';
+    } catch(e) { notice = 'Gagal menyimpan pencarian: ' + e.message; }
   }
 
   function formatTime(isoStr) {
@@ -375,6 +370,7 @@
     selectedCompany = 'all';
     onlyNew = false;
     searchQuery = '';
+    currentPage = 0;
     showSavedOnly = false;
     loadJobs();
   }
@@ -389,12 +385,13 @@
       case 'new': onlyNew = value; break;
       default: return;
     }
+    currentPage = 0;
     loadJobs();
   }
 
   function scheduleLoadJobs() {
     clearTimeout(searchTimer);
-    searchTimer = setTimeout(loadJobs, 280);
+    searchTimer = setTimeout(() => { currentPage = 0; loadJobs(); }, 280);
   }
 
   async function toggleSaved(job) {
@@ -507,14 +504,14 @@
     </div>
     <div class="results-toolbar">
       <strong>{showSavedOnly ? 'Saved positions' : selectedRole === 'all' ? 'All positions' : roleCategories.find(r => r.id === selectedRole)?.label}</strong>
-      <span class="results-count">{loading ? 'Memuat…' : visibleJobs.length + ' dari ' + jobsTotal}</span>
+      <span class="results-count">{loading ? 'Memuat…' : jobsTotal ? (currentPage * PAGE_SIZE + 1) + '–' + (currentPage * PAGE_SIZE + visibleJobs.length) + ' dari ' + jobsTotal : '0 lowongan'}</span>
       <div class="results-actions">
         <label for="results-sort" class="results-sort-label">Sort</label>
-        <select id="results-sort" class="ui-input results-sort" bind:value={sortMode} onchange={loadJobs}>
+        <select id="results-sort" class="ui-input results-sort" bind:value={sortMode} onchange={()=>{currentPage=0;loadJobs();}}>
           <option value="recent">Recent</option>
           <option value="match">Best match</option>
         </select>
-        <button type="button" class="ui-icon-button" class:is-active={showSavedOnly} onclick={() => {showSavedOnly = !showSavedOnly;loadJobs();}} aria-pressed={showSavedOnly} title="Hanya lowongan tersimpan" aria-label="Tampilkan posisi tersimpan"><Icon name="bookmark" size={16}/></button>
+        <button type="button" class="ui-icon-button" class:is-active={showSavedOnly} onclick={() => {showSavedOnly = !showSavedOnly;currentPage=0;loadJobs();}} aria-pressed={showSavedOnly} title="Hanya lowongan tersimpan" aria-label="Tampilkan posisi tersimpan"><Icon name="bookmark" size={16}/></button>
         <div class="view-segments" aria-label="Mode tampilan">
           <button type="button" aria-label="Grid view" aria-pressed={displayMode === 'grid'} onclick={() => displayMode = 'grid'}><Icon name="grid" size={14}/></button>
           <button type="button" aria-label="List view" aria-pressed={displayMode === 'list'} onclick={() => displayMode = 'list'}><Icon name="list" size={14}/></button>
@@ -541,6 +538,13 @@
             />
           {/each}
         </div>
+      {/if}
+      {#if jobsTotal > PAGE_SIZE}
+        <nav class="results-pagination" aria-label="Navigasi halaman lowongan">
+          <button type="button" disabled={currentPage===0 || loading} onclick={()=>{currentPage--;loadJobs();}}>← Sebelumnya</button>
+          <span>Halaman {currentPage + 1} / {Math.ceil(jobsTotal / PAGE_SIZE)}</span>
+          <button type="button" disabled={(currentPage+1)*PAGE_SIZE>=jobsTotal || loading} onclick={()=>{currentPage++;loadJobs();}}>Berikutnya →</button>
+        </nav>
       {/if}
     </div>
   {/snippet}
@@ -618,4 +622,10 @@
 .app-notice button{background:none;border:0;color:var(--color-text-secondary);cursor:pointer}
 @media(max-width:1020px){.app-context,.app-divider{display:none}.app-view-tabs button{font-size:10px;padding:6px}}
 @media(max-width:680px){.app-view-tabs{gap:0}.app-view-tabs button{font-size:9px;padding:5px}.app-status,.results-sort-label{display:none}.results-sort{min-width:73px;width:75px}.app-brand-name{display:none}}
+</style>
+
+<style>
+.results-pagination{display:flex;gap:14px;align-items:center;justify-content:center;flex-shrink:0;padding:10px;border-top:1px solid var(--color-border);font-size:11px;color:var(--color-text-secondary)}
+.results-pagination button{cursor:pointer;color:var(--color-text-heading);font-size:11px;padding:5px 9px;border:1px solid var(--color-border);border-radius:var(--radius-md);background:var(--color-surface)}
+.results-pagination button:disabled{opacity:.35;cursor:not-allowed}
 </style>
