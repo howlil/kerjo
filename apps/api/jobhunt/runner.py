@@ -6,12 +6,18 @@ from jobhunt.db import Database
 from jobhunt.models import Job, SourceResult
 from jobhunt.sources.jobstreet import fetch_jobstreet
 from jobhunt.sources.kalibrr import fetch_kalibrr
+from jobhunt.sources.linkedin import fetch_linkedin
+from jobhunt.sources.glints import fetch_glints
+from jobhunt.sources.dealls import fetch_dealls
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_SOURCES: Dict[str, Callable[[str], SourceResult]] = {
     "jobstreet": lambda kw: fetch_jobstreet(kw),
     "kalibrr": lambda kw: fetch_kalibrr(kw),
+    "linkedin": lambda kw: fetch_linkedin(kw),
+    "glints": lambda kw: fetch_glints(kw),
+    "dealls": lambda kw: fetch_dealls(kw),
 }
 
 class LockAcquireError(Exception):

@@ -86,7 +86,7 @@ def cmd_searches(args, db: Database):
         new_id = db.create_search(
             keyword=args.keyword,
             area=args.area or "all",
-            sources=args.sources.split(",") if args.sources else ["jobstreet", "kalibrr"],
+            sources=args.sources.split(",") if args.sources else ["jobstreet", "kalibrr", "linkedin", "glints", "dealls"],
         )
         print(f"[+] Saved search #{new_id} added: '{args.keyword}' (area: {args.area or 'all'})")
     elif action == "toggle":

@@ -23,7 +23,7 @@ class Database:
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     keyword TEXT NOT NULL,
                     area TEXT NOT NULL DEFAULT 'all',
-                    sources TEXT NOT NULL DEFAULT 'jobstreet,kalibrr',
+                    sources TEXT NOT NULL DEFAULT 'jobstreet,kalibrr,linkedin,glints,dealls',
                     is_active INTEGER NOT NULL DEFAULT 1,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
@@ -69,7 +69,7 @@ class Database:
     # ---------------- Search Queries ----------------
     def create_search(self, keyword: str, area: str = "all", sources: Optional[List[str]] = None) -> int:
         now = datetime.datetime.now(datetime.timezone.utc).isoformat()
-        src_str = ",".join(sources) if sources else "jobstreet,kalibrr"
+        src_str = ",".join(sources) if sources else "jobstreet,kalibrr,linkedin,glints,dealls"
         with self._get_connection() as conn:
             cursor = conn.execute(
                 "INSERT INTO searches (keyword, area, sources, is_active, created_at, updated_at) VALUES (?, ?, ?, 1, ?, ?)",
