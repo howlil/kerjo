@@ -386,7 +386,9 @@ class Database:
             params.extend([pat, pat, pat, pat])
 
         sql += " ORDER BY is_new DESC, COALESCE(posted_at, first_seen_at) DESC, id DESC"
-        if limit is not None:
+        # Filter after loading when age gating is enabled: legacy DBs may
+        # contain mixed provider date representations.
+        if limit is not None and posted_within_days is None:
             sql += " LIMIT ? OFFSET ?"
             params.extend([max(1, min(int(limit), 100000)), max(0, int(offset))])
 
@@ -399,9 +401,24 @@ class Database:
                 if posted_within_days != 14:
                     raise ValueError("Only the 14-day discovery window is supported")
                 jobs = [job for job in jobs if recent_posting(job.get("posted_at"))]
+                if limit is not None:
+                    start = max(0, int(offset))
+                    jobs = jobs[start:start + max(1, min(int(limit), 100000))]
             return jobs
 
-    def get_companies(self, limit: int = 150) -> List[Dict[str, Any]]:
+    def get_companies(self, limit: int = 150, posted_within_days: Optional[int] = None) -> List[Dict[str, Any]]:
+        if posted_within_days is not None:
+            jobs = self.get_jobs(limit=None, posted_within_days=posted_within_days)
+            counts: Dict[str, Dict[str, Any]] = {}
+            for job in jobs:
+                company = job.get("company")
+                if not company or not company.strip():
+                    continue
+                item = counts.setdefault(company, {"company": company, "job_count": 0,
+                                                   "company_logo": None})
+                item["job_count"] += 1
+                item["company_logo"] = item["company_logo"] or job.get("company_logo")
+            return sorted(counts.values(), key=lambda row: (-row["job_count"], row["company"]))[:limit]
         with self._get_connection() as conn:
             rows = conn.execute(
                 """
