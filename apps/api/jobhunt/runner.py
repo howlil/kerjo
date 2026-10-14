@@ -19,6 +19,8 @@ from jobhunt.sources.glints import fetch_glints
 from jobhunt.sources.dealls import fetch_dealls
 from jobhunt.sources.karir import fetch_karir
 from jobhunt.sources.techinasia import fetch_techinasia
+from jobhunt.sources.ats import fetch_ats
+from jobhunt.sources.linkedin_posts import fetch_linkedin_posts
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +29,13 @@ logger = logging.getLogger(__name__)
 DEFAULT_SOURCES: Dict[str, Callable[[str], SourceResult]] = {
     "jobstreet": lambda kw: collect_pages("jobstreet", lambda p: fetch_jobstreet(kw, page=p)),
     "kalibrr": lambda kw: collect_pages("kalibrr", lambda p: fetch_kalibrr(kw, offset=(p - 1) * 30)),
-    "linkedin": lambda kw: collect_pages("linkedin", lambda p: fetch_linkedin(kw, start=(p - 1) * 25)),
+    # Preserve the legacy source identifier to report why old saved searches
+    # no longer run the undocumented LinkedIn guest endpoint.
+    "linkedin": lambda kw: SourceResult(
+        "linkedin", False, [],
+        "Legacy guest endpoint retired; use linkedin_posts (authorized) or import HR post manually"),
+    "linkedin_posts": fetch_linkedin_posts,
+    "ats": fetch_ats,
     "glints": lambda kw: fetch_glints(kw),
     "dealls": lambda kw: collect_pages("dealls", lambda p: fetch_dealls(kw, page=p)),
     "karir": lambda kw: collect_pages("karir", lambda p: fetch_karir(kw, page=p)),
@@ -309,6 +317,8 @@ class JobRunner:
                 recent_jobs.append(job)
 
         new_count, _ = self.db.upsert_jobs(recent_jobs)
+        description_complete = sum(j.description_status == "complete" for j in recent_jobs)
+        description_missing = sum(not j.description for j in recent_jobs)
         status = "partial" if source_result.error_message else "success"
         self.db.record_run(
             source=source_name,
@@ -340,6 +350,8 @@ class JobRunner:
             "pages_fetched": source_result.pages_fetched,
             "retry_count": source_result.retry_count,
             "details_enriched": source_result.enriched_count,
+            "descriptions_complete": description_complete,
+            "descriptions_missing": description_missing,
             "duration_ms": source_result.elapsed_ms,
             "error": source_result.error_message,
         }

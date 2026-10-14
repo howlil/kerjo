@@ -39,7 +39,7 @@ class Database:
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     keyword TEXT NOT NULL,
                     area TEXT NOT NULL DEFAULT 'all',
-                    sources TEXT NOT NULL DEFAULT 'jobstreet,kalibrr,linkedin,glints,dealls,karir,techinasia',
+                    sources TEXT NOT NULL DEFAULT 'jobstreet,kalibrr,glints,dealls,karir,techinasia',
                     is_active INTEGER NOT NULL DEFAULT 1,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
@@ -109,6 +109,11 @@ class Database:
                 ("role_category", "TEXT DEFAULT 'other'"),
                 ("company_logo", "TEXT"),
                 ("work_mode", "TEXT DEFAULT 'unknown'"),
+                ("description_status", "TEXT NOT NULL DEFAULT 'missing'"),
+                ("description_source", "TEXT"),
+                ("application_url", "TEXT"),
+                ("application_evidence", "TEXT"),
+                ("origin_url", "TEXT"),
             ]
             for col_name, col_def in migrations:
                 if col_name not in existing_cols:
@@ -132,7 +137,7 @@ class Database:
     # ---------------- Search Queries ----------------
     def create_search(self, keyword: str, area: str = "all", sources: Optional[List[str]] = None) -> int:
         now = datetime.datetime.now(datetime.timezone.utc).isoformat()
-        src_str = ",".join(sources) if sources else "jobstreet,kalibrr,linkedin,glints,dealls"
+        src_str = ",".join(sources) if sources else "jobstreet,kalibrr,glints,dealls"
         with self._get_connection() as conn:
             cursor = conn.execute(
                 "INSERT INTO searches (keyword, area, sources, is_active, created_at, updated_at) VALUES (?, ?, ?, 1, ?, ?)",
@@ -195,7 +200,7 @@ class Database:
                 now = datetime.datetime.now(datetime.timezone.utc).isoformat()
                 conn.executemany(
                     "INSERT INTO searches(keyword, area, sources, is_active, created_at, updated_at) VALUES(?, ?, ?, 1, ?, ?)",
-                    [(kw, area, "jobstreet,kalibrr,linkedin,glints,dealls", now, now)
+                    [(kw, area, "jobstreet,kalibrr,glints,dealls", now, now)
                      for kw, area in default_searches]
                 )
 
@@ -232,9 +237,18 @@ class Database:
 
                 # Check if exists
                 existing = conn.execute(
-                    "SELECT id, is_new FROM jobs WHERE source = ? AND external_id = ?",
+                    "SELECT id, is_new, description_status FROM jobs WHERE source = ? AND external_id = ?",
                     (job.source, job.external_id),
                 ).fetchone()
+
+                preserve_complete = bool(
+                    existing and existing["description_status"] == "complete"
+                    and job.description_status != "complete"
+                )
+                if preserve_complete:
+                    # The search-card snippet may still improve other metadata,
+                    # but must not replace a verified full description.
+                    job.description = None
 
                 if existing:
                     # Update metadata & last_seen
@@ -317,6 +331,20 @@ class Database:
                             now,
                             now,
                         ),
+                    )
+
+                if not preserve_complete:
+                    conn.execute(
+                        """UPDATE jobs SET description_status = ?, description_source = ?,
+                                  application_url = COALESCE(?, application_url),
+                                  application_evidence = COALESCE(?, application_evidence),
+                                  origin_url = COALESCE(?, origin_url)
+                           WHERE source = ? AND external_id = ?""",
+                        (job.description_status if job.description_status != "missing"
+                         else ("partial" if job.description else "missing"),
+                         job.description_source, job.application_url,
+                         job.application_evidence, job.origin_url,
+                         job.source, job.external_id),
                     )
 
         return new_count, len(jobs)

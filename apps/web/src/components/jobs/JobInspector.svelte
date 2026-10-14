@@ -95,6 +95,18 @@
     </section>
     <section class="panel-section">
       <h3>DESCRIPTION</h3>
+      <p class="inspector-note">
+        {job.description_status === 'complete' ? 'Deskripsi lengkap tersedia'
+          : job.description_status === 'partial' ? 'Ringkasan / belum lengkap'
+          : 'Deskripsi belum ditemukan'}
+        {#if job.description_source} · {job.description_source}{/if}
+      </p>
+      {#if job.application_evidence === 'careers-link-unverified'}
+        <p class="inspector-note">Link karier ditemukan di posting HR, tetapi lowongan belum diverifikasi langsung.</p>
+      {/if}
+      {#if job.origin_url}
+        <p class="inspector-note"><a href={job.origin_url} target="_blank" rel="noopener noreferrer">Lihat posting recruiter <Icon name="arrowUpRight" size={12}/></a></p>
+      {/if}
       {#if job.description?.trim()}
         <p class="inspector-description">{job.description}</p>
       {:else}
@@ -114,7 +126,7 @@
   <div class="inspector-footer">
     <Button onclick={() => onSeen(job)} disabled={!job.is_new}><Icon name="checkCircle" size={14}/>{job.is_new ? 'Tandai dilihat' : 'Sudah dilihat'}</Button>
     {#if job.url}
-      <a class="inspector-open" href={job.url} target="_blank" rel="noopener noreferrer">Buka sumber <Icon name="arrowUpRight" size={14}/></a>
+      <a class="inspector-open" href={job.application_url || job.url} target="_blank" rel="noopener noreferrer">Buka lamaran <Icon name="arrowUpRight" size={14}/></a>
     {:else}
       <span class="inspector-open is-disabled">Tautan tidak ada</span>
     {/if}

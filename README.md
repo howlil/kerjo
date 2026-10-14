@@ -101,6 +101,21 @@ concurrency, failure policies, security boundaries, and verification.
 `queued`, `running`, `completed`, `partial`, `failed`, or `skipped`.
 
 
+## Full descriptions and recruiter-post ingestion
+
+On each manual run, Kerjo can enrich job cards with public JobPosting JSON-LD
+or targeted description HTML. Description confidence and provenance are
+persisted. Public Greenhouse, Lever and Ashby company boards are opt-in via
+KERJO_ATS_BOARDS, and the per-source detail request budget is bounded.
+
+LinkedIn guest scraping is retired. Use **Impor post HR** in Discover for
+dated recruiter posts containing a real-looking direct careers/apply link,
+or configure authorized LinkedIn Posts API access for approved authors.
+A link is **not** proof that the vacancy is still accepting applicants.
+
+See [Job Ingestion V2](docs/job-ingestion-v2.md) for supported sources,
+environment variables, limitations, and verification protocol.
+
 ## Main API routes
 
 | Route | Methods | Purpose |
@@ -109,7 +124,8 @@ concurrency, failure policies, security boundaries, and verification.
 | /api/searches | GET, POST | Saved search rules |
 | /api/searches/{id}/toggle | PUT | Toggle active search |
 | /api/searches/{id} | DELETE | Delete saved search |
-| /api/run | POST | Enqueue background scrape |
+| /api/run | POST | Enqueue manual scrape worker |
+| /api/linkedin-posts | POST | Import 1–20 dated recruiter posts with application-link evidence |
 | /api/run/{id} | GET | Inspect run progress |
 | /api/runs | GET | Per-source execution history |
 | /api/source-health | GET | Last result by adapter |

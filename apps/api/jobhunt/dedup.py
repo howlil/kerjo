@@ -102,8 +102,21 @@ def group_dedup_jobs(jobs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                 existing["salary"] = job["salary"]
             if (len(job.get("location_raw") or "")) > (len(existing.get("location_raw") or "")):
                 existing["location_raw"] = job["location_raw"]
-            if (len(job.get("description") or "")) > (len(existing.get("description") or "")):
-                existing["description"] = job["description"]
+            # A complete job description outranks a longer search-card snippet.
+            better_description = (
+                (job.get("description_status") == "complete" and existing.get("description_status") != "complete")
+                or (job.get("description_status") == existing.get("description_status")
+                    and len(job.get("description") or "") > len(existing.get("description") or ""))
+            )
+            if better_description:
+                existing["description"] = job.get("description")
+                existing["description_status"] = job.get("description_status")
+                existing["description_source"] = job.get("description_source")
+            if not existing.get("origin_url") and job.get("origin_url"):
+                existing["origin_url"] = job["origin_url"]
+            if not existing.get("application_url") and job.get("application_url"):
+                existing["application_url"] = job["application_url"]
+                existing["application_evidence"] = job.get("application_evidence")
             if (existing.get("experience_level") in (None, "unspecified")) and job.get("experience_level") not in (None, "unspecified"):
                 existing["experience_level"] = job["experience_level"]
                 existing["min_years"] = job.get("min_years")
