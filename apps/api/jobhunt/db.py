@@ -165,11 +165,11 @@ class Database:
         with self._get_connection() as conn:
             existing = conn.execute("SELECT count(*) FROM searches").fetchone()[0]
             if existing == 0:
-                for kw, area in default_searches:
-                    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
-                conn.execute(
+                now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+                conn.executemany(
                     "INSERT INTO searches(keyword, area, sources, is_active, created_at, updated_at) VALUES(?, ?, ?, 1, ?, ?)",
-                    (kw, area, "jobstreet,kalibrr,linkedin,glints,dealls", now, now)
+                    [(kw, area, "jobstreet,kalibrr,linkedin,glints,dealls", now, now)
+                     for kw, area in default_searches]
                 )
 
     # ---------------- Job Queries & Upsert ----------------
@@ -343,11 +343,11 @@ class Database:
 
         if experience_level and experience_level != "all":
             if experience_level == "entry":
-                sql += " AND (experience_level = 'entry' OR (min_years IS NOT NULL AND min_years <= 1))"
+                sql += " AND experience_level = 'entry'"
             elif experience_level == "mid":
-                sql += " AND (experience_level = 'mid' OR (min_years IS NOT NULL AND min_years >= 1 AND min_years <= 3))"
+                sql += " AND experience_level = 'mid'"
             elif experience_level == "senior":
-                sql += " AND (experience_level = 'senior' OR (min_years IS NOT NULL AND min_years >= 3))"
+                sql += " AND experience_level = 'senior'"
             elif experience_level == "unspecified":
                 sql += " AND (experience_level = 'unspecified' OR experience_level IS NULL)"
 
