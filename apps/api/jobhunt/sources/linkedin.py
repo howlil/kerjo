@@ -91,6 +91,7 @@ def fetch_linkedin(keyword: str, location: str = "Jakarta, Indonesia", start: in
         "keywords": keyword,
         "location": location,
         "start": str(start),
+        "f_TPR": "r1209600",  # Request last 14 days; final date gate remains local.
     }
     url = f"https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?{urllib.parse.urlencode(query_params)}"
     req = urllib.request.Request(
