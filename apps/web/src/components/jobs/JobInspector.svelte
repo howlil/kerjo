@@ -51,6 +51,7 @@
         <div><dt>Category</dt><dd>{formatRole(job.role_category)}</dd></div>
         <div><dt>Seniority</dt><dd>{(job.experience_level || 'unspecified').toUpperCase()}</dd></div>
         <div><dt>Platform</dt><dd>{job.sources?.length > 1 ? job.sources.length + ' platform' : (job.source || '—')}</dd></div>
+        <div><dt>Posted</dt><dd>{job.posted_at || 'Tanggal tidak tersedia'}</dd></div>
         <div><dt>Salary</dt><dd>{job.salary || 'Not disclosed'}</dd></div>
       </dl>
       {#if job.experience_raw}<p class="inspector-note">Persyaratan: {job.experience_raw}</p>{/if}
