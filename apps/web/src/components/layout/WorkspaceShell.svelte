@@ -13,7 +13,7 @@
   {/if}
 </div>
 <style>
-.workspace{height:100dvh;min-height:440px;width:100%;display:flex;flex-direction:column;overflow:hidden;background:var(--color-page)}
+.workspace{position:relative;height:100dvh;min-height:440px;width:100%;display:flex;flex-direction:column;overflow:hidden;background:var(--color-page)}
 .workspace-header{height:var(--workspace-header-height);min-height:var(--workspace-header-height);border-bottom:var(--workspace-rule);display:flex;align-items:center;padding:0 var(--space-4);gap:var(--space-3)}
 .workspace-body{display:grid;grid-template-columns:var(--workspace-sidebar-width) minmax(0,1fr) var(--workspace-inspector-width);flex:1;min-height:0;overflow:hidden}
 .workspace-filter,.workspace-inspector{min-width:0;min-height:0;display:flex;flex-direction:column;background:var(--color-page)}
