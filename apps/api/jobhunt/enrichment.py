@@ -14,11 +14,16 @@ import urllib.parse
 import urllib.request
 
 from jobhunt.freshness import posting_age_status, parse_posted_at
+from jobhunt.html_details import parse_job_detail
 
 SOURCE_HOSTS = {
     "jobstreet": frozenset({"id.jobstreet.com"}),
     "kalibrr": frozenset({"kalibrr.com", "www.kalibrr.com"}),
-    "linkedin": frozenset({"linkedin.com", "www.linkedin.com"}),
+    # No direct LinkedIn guest scraping. Recruiter links can resolve to public ATS pages.
+    "linkedin_posts": frozenset({"boards.greenhouse.io", "job-boards.greenhouse.io",
+                                  "jobs.ashbyhq.com", "jobs.lever.co", "jobs.eu.lever.co"}),
+    "ats": frozenset({"boards.greenhouse.io", "job-boards.greenhouse.io",
+                       "jobs.ashbyhq.com", "jobs.lever.co", "jobs.eu.lever.co"}),
     "glints": frozenset({"glints.com", "www.glints.com"}),
     "dealls": frozenset({"dealls.com", "www.dealls.com"}),
     "karir": frozenset({"karir.com", "www.karir.com"}),
@@ -144,7 +149,7 @@ def enrich_jobs(jobs, source, *, max_details=None, fetch_html=None, stats=None):
             continue
         if freshness == "unknown":
             candidates.append((0, job))
-        elif len(job.description or "") < 240:
+        elif getattr(job, "description_status", "missing") != "complete":
             candidates.append((1, job))
     candidates.sort(key=lambda item: item[0])
     changed = 0
@@ -156,8 +161,17 @@ def enrich_jobs(jobs, source, *, max_details=None, fetch_html=None, stats=None):
             continue
         seen_urls.add(job.url)
         try:
-            metadata = jobposting_metadata(fetch_html(job.url),
-                                           expected_title=job.title)
+            page_html = fetch_html(job.url)
+            metadata = jobposting_metadata(page_html, expected_title=job.title)
+            # Fallback to a targeted HTML section, never general page text.
+            # Prefer a title-validated JSON-LD JobPosting when available.
+            if not metadata.get("description"):
+                detail = parse_job_detail(page_html)
+                if detail.description:
+                    metadata["description"] = detail.description
+                    metadata["provenance"] = detail.provenance
+                if detail.posted_at and not metadata.get("posted_at"):
+                    metadata["posted_at"] = detail.posted_at
             updated = False
             if posting_age_status(job.posted_at) == "unknown" and metadata.get("posted_at"):
                 parsed = parse_posted_at(metadata["posted_at"])
@@ -165,8 +179,11 @@ def enrich_jobs(jobs, source, *, max_details=None, fetch_html=None, stats=None):
                     job.posted_at = parsed.isoformat()
                     updated = True
             description = metadata.get("description")
-            if description and len(description) > len(job.description or ""):
+            if (description and (getattr(job, "description_status", "missing") != "complete"
+                                 or len(description) > len(job.description or ""))):
                 job.description = description
+                job.description_status = "complete" if len(description) >= 180 else "partial"
+                job.description_source = metadata.get("provenance") or "jsonld"
                 updated = True
             if updated:
                 changed += 1
