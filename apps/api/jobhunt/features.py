@@ -218,7 +218,7 @@ class FeatureStore:
             # or first_seen timestamps as an approximation of run membership.
             for external_id in set(result.get("job_external_ids", ())):
                 conn.execute("""INSERT OR IGNORE INTO run_job_links(batch_id,job_id)
-                    SELECT ?, id FROM jobs WHERE source=? AND external_id=?""",
+                    SELECT ?, id FROM jobs WHERE source=? AND external_id=? AND role_category!='other'""",
                     (batch_id, source, external_id))
 
     def get_run_events(self, batch_id, after=0, limit=100):
@@ -233,13 +233,20 @@ class FeatureStore:
             return [dict(row) for row in conn.execute(
                 "SELECT * FROM run_batches ORDER BY id DESC LIMIT ?", (limit,))]
 
-    def get_run_preview(self, batch_id, limit=60, offset=0):
+    def get_run_preview(self, batch_id, limit=60, offset=0, source=None, query_text=None):
         """Run-scoped, freshness-gated preview with total AFTER verified dedup."""
         with self.db._get_connection() as conn:
             rows = conn.execute("""SELECT j.* FROM jobs j
                 JOIN run_job_links b ON b.job_id=j.id
                 WHERE b.batch_id=?""", (batch_id,)).fetchall()
         jobs = [dict(row) for row in rows if recent_posting(row["posted_at"])]
+        if source and source != "all":
+            jobs = [job for job in jobs if job["source"] == source]
+        if query_text:
+            needle = query_text.casefold()
+            jobs = [job for job in jobs if needle in (
+                (job.get("title") or "") + " " + (job.get("company") or "") +
+                " " + (job.get("description") or "")).casefold()]
         jobs = group_dedup_jobs(jobs)
         jobs.sort(key=lambda j: (
             parse_posted_at(j["posted_at"]).timestamp(), j["id"]), reverse=True)
