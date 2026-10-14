@@ -14,7 +14,7 @@
   }
 </script>
 <div class="preferences-page">
-  <header><h1>Preferences & sources</h1><p>Atur target pencarian. Informasi yang tidak ditemukan tetap uncertain, bukan dianggap eligible.</p></header>
+  <header><h1>Preferences & sources</h1><p>Atur target pencarian manual. Discover hanya menampilkan lowongan yang dipublikasikan dalam 14 hari terakhir.</p></header>
   <section class="preferences-section">
     <h2>Target role</h2>
     <div class="preference-options">
@@ -52,10 +52,10 @@
   <button type="button" class="preferences-save" onclick={onSave}>Simpan preferensi</button>
   <section class="preferences-section source-list">
     <h2>Provider health</h2>
-    <p>Hasil scraping terakhir. Ini bukan konfirmasi bahwa Task Scheduler terpasang atau lowongan aktif.</p>
+    <p>Riwayat hasil scraping manual. Dihitung dari tanggal publikasi, bukan waktu pertama ditemukan.</p>
     {#if !sources.length}<p>Belum ada riwayat scraping.</p>{/if}
     {#each sources as source}
-      <div class="source-row"><strong>{source.source}</strong><span>{source.status} · {source.jobs_new} baru · {formatTime(source.ran_at)}</span></div>
+      <div class="source-row"><strong>{source.source}</strong><span>{source.status} · {source.jobs_recent || 0} dalam 14 hari · {source.filtered_old || 0} lama · {source.filtered_unknown || 0} tanpa tanggal · {formatTime(source.ran_at)}</span></div>
     {/each}
   </section>
 </div>
