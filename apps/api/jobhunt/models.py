@@ -32,3 +32,12 @@ class SourceResult:
     success: bool
     jobs: list[Job]
     error_message: Optional[str] = None
+    # Optional provider metadata; existing adapters and tests remain compatible.
+    raw_count: Optional[int] = None  # Count before location/title filtering
+    has_more: Optional[bool] = None  # Only set when the provider supplies an explicit signal
+    http_status: Optional[int] = None
+    retry_after_seconds: Optional[float] = None
+    pages_fetched: int = 0
+    retry_count: int = 0
+    enriched_count: int = 0
+    elapsed_ms: int = 0
