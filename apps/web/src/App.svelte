@@ -70,6 +70,11 @@
   let showRecruiterImport = $state(false);
   let importingPost = $state(false);
   let recruiterPost = $state({post_url:'',text:'',title:'',company:'',location:'',posted_at:'',apply_url:''});
+  let showAtsBoards = $state(false);
+  let atsBoards = $state([]);
+  let newAtsProvider = $state('ashby');
+  let newAtsSlug = $state('');
+  let savingAtsBoard = $state(false);
   let newKeyword = $state('');
   let newArea = $state('all');
   let newSources = $state({
@@ -136,6 +141,37 @@
   function jsonOptions(method,payload) {
     return {method,headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)};
   }
+  async function loadAtsBoards() {
+    atsBoards = (await api('/api/ats-boards')).boards || [];
+  }
+  async function addAtsBoard(event) {
+    event.preventDefault();
+    if (savingAtsBoard) return;
+    savingAtsBoard = true;
+    try {
+      await api('/api/ats-boards', jsonOptions('POST', {
+        provider: newAtsProvider, slug: newAtsSlug.trim()
+      }));
+      newAtsSlug = '';
+      await loadAtsBoards();
+      notice = 'Company board disimpan. Aktifkan sumber Company ATS dalam saved search, lalu klik Scrape sekarang.';
+    } catch (error) {
+      notice = 'Gagal menyimpan company board: ' + error.message;
+    } finally {
+      savingAtsBoard = false;
+    }
+  }
+  async function removeAtsBoard(board) {
+    if (!confirm('Hapus sumber ' + board.provider + ':' + board.slug + '? Lowongan yang sudah tersimpan tidak dihapus.')) return;
+    try {
+      await api('/api/ats-boards/' + board.id, {method:'DELETE'});
+      await loadAtsBoards();
+      notice = 'Sumber dihapus. Hasil scraping lama tetap tersimpan.';
+    } catch (error) {
+      notice = 'Gagal menghapus sumber: ' + error.message;
+    }
+  }
+
   async function loadInventory() {
     jobInventory = await api('/api/jobs/inventory');
   }
@@ -533,6 +569,7 @@
     loadJobs();
     loadCompanies();
     loadInventory();
+    loadAtsBoards();
     loadSearches();
     loadRuns();
     loadPreferences();
@@ -568,6 +605,7 @@
       </button>
       {#if currentView==='discovery'}
       <span class="desktop-action"><Button onclick={markAllSeen}><Icon name="checkCircle" size={14}/>Tandai dilihat</Button></span>
+      <Button onclick={() => showAtsBoards = true}>Sumber ATS</Button>
       <Button onclick={() => showRecruiterImport = true}>Impor post HR</Button>
       <Button onclick={() => showAddSearch = true}><Icon name="plus" size={14}/><span class="desktop-action">Tambah pencarian</span></Button>
       {/if}
@@ -726,6 +764,44 @@
   </div>
 {/if}
 
+{#if showAtsBoards}
+  <div class="ui-modal-backdrop" role="presentation">
+    <section class="ui-modal" role="dialog" aria-modal="true" aria-labelledby="ats-board-title">
+      <div class="ui-modal-header"><h2 id="ats-board-title">Sumber perusahaan (ATS)</h2>
+        <button type="button" class="ui-icon-button" onclick={() => showAtsBoards = false} aria-label="Tutup"><Icon name="x" size={16}/></button></div>
+      <p class="delete-explanation">Hubungkan board lowongan publik milik perusahaan. Tidak perlu CLI atau API key untuk Greenhouse, Lever, atau Ashby.</p>
+      {#if atsBoards.length}
+        <div class="ats-board-list">
+          {#each atsBoards as board (board.id)}
+            <div class="ats-board-entry">
+              <div><strong>{board.slug}</strong><span>{board.provider}</span></div>
+              <button type="button" onclick={() => removeAtsBoard(board)} aria-label={'Hapus '+board.slug}>Hapus</button>
+            </div>
+          {/each}
+        </div>
+      {:else}
+        <p class="ats-board-empty">Belum ada company board yang disimpan.</p>
+      {/if}
+      <form onsubmit={addAtsBoard}>
+        <div class="ui-modal-field"><label for="ats-provider">Platform ATS</label>
+          <select id="ats-provider" class="ui-input" bind:value={newAtsProvider}>
+            <option value="ashby">Ashby</option>
+            <option value="greenhouse">Greenhouse</option>
+            <option value="lever">Lever</option>
+          </select></div>
+        <div class="ui-modal-field"><label for="ats-slug">Company board slug</label>
+          <input id="ats-slug" class="ui-input" required minlength="2" maxlength="90" pattern="[A-Za-z0-9_-]+" placeholder="Contoh: nama-perusahaan" bind:value={newAtsSlug}/>
+        </div>
+        <p class="ats-board-empty">Gunakan slug dari URL board publik perusahaan, bukan keyword pekerjaan.</p>
+        <div class="ui-modal-actions">
+          <Button onclick={() => showAtsBoards = false}>Tutup</Button>
+          <Button type="submit" variant="primary" disabled={savingAtsBoard}>{savingAtsBoard ? 'Menyimpan…' : 'Tambah sumber'}</Button>
+        </div>
+      </form>
+    </section>
+  </div>
+{/if}
+
 {#if showDeleteDialog}
   <div class="ui-modal-backdrop" role="presentation">
     <section class="ui-modal" role="dialog" aria-modal="true" aria-labelledby="delete-results-title">
@@ -814,6 +890,12 @@
 {/if}
 
 <style>
+.ats-board-list{margin-bottom:16px}
+.ats-board-entry{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:9px 0;border-bottom:var(--workspace-rule);font-size:12px}
+.ats-board-entry div{display:flex;flex-direction:column;gap:3px}
+.ats-board-entry strong{color:var(--color-text-heading)}
+.ats-board-entry span,.ats-board-empty{color:var(--color-text-secondary);font-size:11px;line-height:1.5;margin-bottom:10px}
+.ats-board-entry button{background:transparent;color:var(--color-text-secondary);font-size:11px;cursor:pointer}
 .scrape-status{padding:9px var(--space-4);border-bottom:var(--workspace-rule);background:var(--color-surface-muted);font-size:11px;color:var(--color-text-secondary)}
 .scrape-status-heading{display:flex;justify-content:space-between;gap:10px;align-items:center;margin-bottom:6px}
 .scrape-status-heading strong{font-size:12px;color:var(--color-text-heading)}
