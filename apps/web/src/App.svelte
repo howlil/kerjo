@@ -231,7 +231,10 @@
       if (['completed','partial','failed','skipped'].includes(run.status)) {
         runningScraper = false;
         const excluded = (run.filtered_old || 0) + (run.filtered_unknown || 0) + (run.filtered_future || 0);
-        const detail = excluded ? (' · ' + excluded + ' dikecualikan (lama/tanggal tidak valid)') : '';
+        const detail = (excluded ? (' · ' + excluded + ' dikecualikan') : '') +
+          (' · ' + (run.pages_fetched || 0) + ' halaman · ' +
+           (run.retry_count || 0) + ' retry · ' +
+           (run.details_enriched || 0) + ' detail diperkaya');
         notice = run.status === 'completed'
           ? ('Scraping selesai: ' + run.jobs_new + ' lowongan baru (14 hari terakhir)' + detail)
           : run.status === 'skipped'
