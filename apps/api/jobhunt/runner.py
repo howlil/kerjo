@@ -357,6 +357,7 @@ class JobRunner:
             "details_enriched": source_result.enriched_count,
             "descriptions_complete": description_complete,
             "descriptions_missing": description_missing,
+            "job_external_ids": [job.external_id for job in recent_jobs],
             "duration_ms": source_result.elapsed_ms,
             "error": source_result.error_message,
         }

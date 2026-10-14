@@ -8,6 +8,8 @@
   import JobInspector from './components/jobs/JobInspector.svelte';
   import ApplicationPipeline from './components/workflow/ApplicationPipeline.svelte';
   import PreferencePanel from './components/workflow/PreferencePanel.svelte';
+  import ScrapingWorkspace from './components/scraping/ScrapingWorkspace.svelte';
+  import ScrapeResultsPreview from './components/scraping/ScrapeResultsPreview.svelte';
 
   // Core State
   let jobs = $state([]);
@@ -24,6 +26,21 @@
   let sourceHealth = $state([]);
   let preferences = $state({role_categories:[], areas:[],work_modes:[],keywords:[],max_required_years:null});
   let currentRun = $state(null);
+  let selectedRun = $state(null);
+  let runHistory = $state([]);
+  let runEvents = $state([]);
+  let runEventsError = $state('');
+  let runEventsLoading = $state(false);
+  let eventCursor = 0;
+  let eventRequestVersion = 0;
+  let previewJobs = $state([]);
+  let previewTotal = $state(0);
+  let previewLoading = $state(false);
+  let previewError = $state('');
+  let previewPage = $state(0);
+  let previewSource = $state('all');
+  let previewQuery = $state('');
+  let previewRequestVersion = 0;
   let sortMode = $state('recent');
   const PAGE_SIZE = 60;
   let currentPage = $state(0);
@@ -328,13 +345,76 @@
     try { sourceHealth = (await api('/api/source-health')).sources || []; }
     catch(e) { notice = 'Gagal memuat source health: ' + e.message; }
   }
+  async function loadRunHistory() {
+    try { runHistory = (await api('/api/run-batches?limit=20')).runs || []; }
+    catch(e) { console.warn('Unable to load run history', e); }
+  }
+  async function loadRunEvents(runId, reset=false) {
+    if (!runId) return;
+    if (reset) { eventCursor=0; runEvents=[]; }
+    const generation = ++eventRequestVersion;
+    runEventsLoading = true;
+    runEventsError = '';
+    try {
+      const response = await api('/api/run/'+runId+'/events?after='+eventCursor+'&limit=200');
+      if (generation !== eventRequestVersion || selectedRun?.id !== runId) return;
+      runEvents = [...runEvents, ...(response.events || [])].slice(-1000);
+      eventCursor = response.next_cursor ?? eventCursor;
+    } catch(e) {
+      if (generation === eventRequestVersion) runEventsError = e.message;
+    } finally {
+      if (generation === eventRequestVersion) runEventsLoading = false;
+    }
+  }
+  async function loadPreview() {
+    const runId = selectedRun?.id;
+    if (!runId) { previewJobs=[]; previewTotal=0; return; }
+    const generation = ++previewRequestVersion;
+    const params = new URLSearchParams({limit:'60',offset:String(previewPage*60)});
+    if (previewSource !== 'all') params.set('source',previewSource);
+    if (previewQuery) params.set('q',previewQuery);
+    previewLoading = true;
+    previewError = '';
+    try {
+      const response = await api('/api/run/'+runId+'/preview?'+params.toString());
+      if (generation !== previewRequestVersion || selectedRun?.id !== runId) return;
+      previewJobs = response.jobs || [];
+      previewTotal = response.total || 0;
+    } catch(e) {
+      if (generation === previewRequestVersion) { previewJobs=[]; previewTotal=0;previewError=e.message; }
+    } finally {
+      if (generation === previewRequestVersion) previewLoading=false;
+    }
+  }
+  async function chooseRun(runId) {
+    try {
+      const run = (await api('/api/run/'+runId)).run;
+      selectedRun = run;
+      previewPage=0;previewSource='all';previewQuery='';
+      await Promise.all([loadRunEvents(run.id,true),loadPreview()]);
+    } catch(e) { notice='Gagal membuka run: '+e.message; }
+  }
+  function setPreviewSource(value) {previewSource=value;previewPage=0;loadPreview();}
+  function setPreviewQuery(value) {previewQuery=value;previewPage=0;loadPreview();}
+  function setPreviewPage(value) {previewPage=value;loadPreview();}
+  async function togglePreviewSaved(job) {
+    try {
+      const ids = job.ids?.length ? job.ids : [job.id];
+      const saved = !Boolean(job.is_saved);
+      await api('/api/jobs/'+job.id+'/save',jsonOptions('POST',{ids,saved}));
+      previewJobs=previewJobs.map(item=>item.id===job.id?{...item,is_saved:Number(saved)}:item);
+      await loadJobs();
+    } catch(e) { notice='Gagal menyimpan lowongan: '+e.message; }
+  }
   async function recoverRun() {
     try {
       const run = (await api('/api/run/latest')).run;
       if (run) {
+        selectedRun = run;
         currentRun = run;
         runningScraper = ['queued','running'].includes(run.status);
         lastObservedProcessed = run.processed_tasks || 0;
+        await Promise.all([loadRunEvents(run.id,true),loadPreview()]);
       }
     } catch(e) { console.warn('Unable to restore run',e); }
   }
@@ -345,9 +425,12 @@
       currentRun = run;
       if ((run.processed_tasks || 0) > lastObservedProcessed) {
         lastObservedProcessed = run.processed_tasks || 0;
-        // Worker persists each source batch before updating the run counters.
-        // Show new SQLite rows even before the entire manual run completes.
         await Promise.all([loadJobs(),loadCompanies()]);
+      }
+      if (selectedRun?.id === run.id) {
+        selectedRun = run;
+        if (currentView === 'scraping') loadRunEvents(run.id);
+        if (currentView === 'preview') loadPreview();
       }
       if (['completed','partial','failed','skipped'].includes(run.status)) {
         runningScraper = false;
@@ -361,17 +444,26 @@
           : run.status === 'skipped'
             ? 'Tidak ada saved search aktif; scraper tidak dijalankan.'
             : ('Scraping ' + run.status + ' — ' + run.errors + ' sumber mengalami error' + detail);
-        await Promise.all([loadJobs(),loadRuns(),loadCompanies(),loadSourceHealth()]);
+        await Promise.all([loadJobs(),loadRuns(),loadCompanies(),loadSourceHealth(),loadRunHistory()]);
+        if (selectedRun?.id === run.id) {
+          await Promise.all([loadRunEvents(run.id),loadPreview()]);
+        }
       }
     } catch(e) { runningScraper=false; notice = 'Error saat memantau worker: '+e.message; }
   }
   async function triggerRun() {
-    if (runningScraper) return;
+    if (runningScraper || deletingResults) return;
     runningScraper = true;
     try {
       const result = await api('/api/run',jsonOptions('POST',{}));
       lastObservedProcessed = 0;
       currentRun = {id:result.run_id,status:'queued',processed_tasks:0,total_tasks:0,jobs_new:0,jobs_found:0,pages_fetched:0,errors:0};
+      selectedRun = currentRun;
+      currentView = 'scraping';
+      previewPage=0;previewSource='all';previewQuery='';
+      runEvents=[];eventCursor=0;eventRequestVersion++;
+      previewJobs=[];previewTotal=0;
+      loadRunHistory();
       notice = 'Permintaan diterima. Kerjo menjalankan scraper asli; hasil ditulis ke SQLite per sumber.';
     } catch(e) { runningScraper=false; notice='Gagal menjalankan scraper: '+e.message; }
   }
@@ -572,11 +664,15 @@
     loadAtsBoards();
     loadSearches();
     loadRuns();
+    loadRunHistory();
     loadPreferences();
     loadApplications();
     loadSourceHealth();
     recoverRun();
-    const interval = setInterval(()=>{if(runningScraper && currentRun) pollRun();},2500);
+    const interval = setInterval(()=>{
+      if(runningScraper && currentRun) pollRun();
+      else if(selectedRun?.id && currentView === 'scraping') loadRunEvents(selectedRun.id);
+    },2500);
     return () => {clearTimeout(searchTimer);clearInterval(interval);};
   });
 </script>
@@ -590,11 +686,13 @@
     <span class="app-divider"></span>
     <span class="app-context">JOB DISCOVERY / LAST 14 DAYS</span>
     <nav class="app-view-tabs" aria-label="Kerjo views">
-      {#each [{id:'discovery',title:'Discover'},{id:'applications',title:'Applications'},{id:'preferences',title:'Preferences'}] as view}
+      {#each [{id:'discovery',title:'Discover'},{id:'scraping',title:'Scraping'},{id:'preview',title:'Results Preview'},{id:'applications',title:'Applications'},{id:'preferences',title:'Preferences'}] as view}
         <button type="button" class:is-active={currentView===view.id}
           onclick={()=>{currentView=view.id;mobileFilterOpen=false;mobileDetailOpen=false;
             if(view.id==='applications')loadApplications();
-            if(view.id==='preferences')loadSourceHealth();}}
+            if(view.id==='preferences')loadSourceHealth();
+            if(view.id==='scraping' && selectedRun?.id) loadRunEvents(selectedRun.id);
+            if(view.id==='preview') loadPreview();}}
           aria-current={currentView===view.id?'page':undefined}>{view.title}</button>
       {/each}
     </nav>
@@ -609,7 +707,9 @@
       <Button onclick={() => showRecruiterImport = true}>Impor post HR</Button>
       <Button onclick={() => showAddSearch = true}><Icon name="plus" size={14}/><span class="desktop-action">Tambah pencarian</span></Button>
       {/if}
-      <Button variant="primary" disabled={runningScraper || deletingResults} onclick={triggerRun}><Icon name="refresh" size={14}/><span>{runningScraper ? 'Scraping berjalan…' : 'Scrape sekarang'}</span></Button>
+      {#if currentView==='discovery'}
+        <Button variant="primary" disabled={runningScraper || deletingResults} onclick={triggerRun}><Icon name="refresh" size={14}/><span>{runningScraper ? 'Scraping berjalan…' : 'Scrape sekarang'}</span></Button>
+      {/if}
     </div>
   {/snippet}
 
@@ -754,6 +854,19 @@
     {:else if currentView === 'preferences'}
       <PreferencePanel {preferences} roles={roleCategories} {areas} sources={sourceHealth}
         onChange={(next)=>preferences=next} onSave={savePreferences} {formatTime}/>
+    {:else if currentView === 'scraping'}
+      <ScrapingWorkspace run={selectedRun} runs={runHistory} events={runEvents} sources={sourceLabels}
+        loading={runEventsLoading} error={runEventsError}
+        onStart={triggerRun} onChooseRun={chooseRun}
+        onPreview={() => {currentView='preview';loadPreview();}}
+        onAddSearch={() => showAddSearch=true}/>
+    {:else if currentView === 'preview'}
+      <ScrapeResultsPreview run={selectedRun} jobs={previewJobs} total={previewTotal}
+        loading={previewLoading} error={previewError}
+        page={previewPage} source={previewSource} query={previewQuery}
+        sources={sourceLabels} onSource={setPreviewSource} onSearch={setPreviewQuery}
+        onPage={setPreviewPage} onBack={() => {currentView='scraping';if(selectedRun)loadRunEvents(selectedRun.id);}}
+        onDiscover={() => {currentView='discovery';loadJobs();}} onSave={togglePreviewSaved}/>
     {/if}
   {/snippet}
 </WorkspaceShell>
