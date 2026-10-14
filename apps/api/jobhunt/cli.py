@@ -153,6 +153,11 @@ def main():
     p_seen = subparsers.add_parser("seen", help="Mark job(s) as seen")
     p_seen.add_argument("job_id", help="Job ID or 'all'")
 
+    # serve command
+    p_serve = subparsers.add_parser("serve", help="Start the Web UI & API server")
+    p_serve.add_argument("--host", default="127.0.0.1", help="Host (default: 127.0.0.1)")
+    p_serve.add_argument("--port", type=int, default=8000, help="Port (default: 8000)")
+
     args = parser.parse_args()
     setup_logging(args.verbose)
     db = Database()
@@ -165,6 +170,9 @@ def main():
         cmd_searches(args, db)
     elif args.command == "seen":
         cmd_seen(args, db)
+    elif args.command == "serve":
+        from jobhunt.server import run_server
+        run_server(host=args.host, port=args.port)
     else:
         parser.print_help()
 
