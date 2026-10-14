@@ -21,6 +21,12 @@ def parse_kalibrr_payload(data: dict) -> list[Job]:
 
         title = (item.get("name") or "").strip()
         company_name = (item.get("company_name") or (item.get("company") or {}).get("name") or "Unknown Company").strip()
+        company_logo = (
+            (item.get("company_info") or {}).get("logo")
+            or (item.get("company") or {}).get("logo")
+            or item.get("company_logo")
+            or (item.get("company_info") or {}).get("logo_url")
+        )
 
         # Location extraction
         g_loc = item.get("google_location") or {}
@@ -80,6 +86,7 @@ def parse_kalibrr_payload(data: dict) -> list[Job]:
                 is_remote=is_remote,
                 posted_at=posted_at,
                 description=desc or None,
+                company_logo=company_logo,
             )
         )
     return jobs

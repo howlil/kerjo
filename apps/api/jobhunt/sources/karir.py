@@ -21,6 +21,7 @@ def parse_karir_payload(data: dict) -> list[Job]:
 
         title = (item.get("job_position") or "").strip()
         company = (item.get("company_name") or "Unknown Company").strip()
+        company_logo = item.get("company_logo") or (item.get("company") or {}).get("logo") or item.get("logo")
 
         loc_str = (item.get("description") or "Jakarta").strip()
         area = match_area(loc_str)
@@ -56,6 +57,7 @@ def parse_karir_payload(data: dict) -> list[Job]:
                 is_remote=False,
                 posted_at=posted_at,
                 description=desc or None,
+                company_logo=company_logo,
             )
         )
     return jobs

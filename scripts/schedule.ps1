@@ -1,5 +1,5 @@
 # scripts/schedule.ps1
-# Script to register / unregister hourly jobhunt scraping via Windows Task Scheduler (using schtasks.exe)
+# Script to register / unregister hourly kerjo scraping via Windows Task Scheduler (using schtasks.exe)
 
 param(
     [Parameter(Position=0)]
@@ -7,7 +7,7 @@ param(
     [string]$Action = "status"
 )
 
-$TaskName = "JobhuntHourlyScraper"
+$TaskName = "KerjoHourlyScraper"
 $PythonExe = (Get-Command python).Source
 $ProjectDir = (Resolve-Path "$PSScriptRoot\..").Path
 $RunScript = "$ProjectDir\scripts\run_worker.bat"

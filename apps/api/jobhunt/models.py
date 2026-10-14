@@ -20,6 +20,7 @@ class Job:
     max_years: Optional[float] = None
     experience_raw: Optional[str] = None
     role_category: Optional[str] = None
+    company_logo: Optional[str] = None
 
     def to_dict(self):
         return asdict(self)

@@ -115,7 +115,7 @@ def cmd_seen(args, db: Database):
             print("[!] Please provide a valid job ID or 'all'.")
 
 def main():
-    parser = argparse.ArgumentParser(description="Jobhunt CLI - Internal multi-site job scraper & tracker")
+    parser = argparse.ArgumentParser(description="kerjo CLI - Internal multi-site job scraper & tracker")
     parser.add_argument("-v", "--verbose", action="store_true", help="Verbose debug logging")
     subparsers = parser.add_subparsers(dest="command")
 

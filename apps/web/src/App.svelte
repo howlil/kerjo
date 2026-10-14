@@ -271,8 +271,8 @@
           <span class="w-8 h-8 rounded-full bg-[var(--color-accent)] text-[#121212] flex items-center justify-center font-bold text-sm shadow-xs transition group-hover:scale-105">
             <Icon name="briefcase" size={16} />
           </span>
-          <span class="text-lg font-semibold tracking-tight text-[var(--color-text-heading)]">
-            JobHunt
+          <span class="text-xl font-bold tracking-tight text-[var(--color-text-heading)]">
+            kerjo
           </span>
         </a>
 

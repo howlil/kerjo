@@ -64,5 +64,7 @@ def group_dedup_jobs(jobs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                 existing["experience_raw"] = job.get("experience_raw")
             if (existing.get("role_category") in (None, "other")) and job.get("role_category") not in (None, "other"):
                 existing["role_category"] = job["role_category"]
+            if not existing.get("company_logo") and job.get("company_logo"):
+                existing["company_logo"] = job["company_logo"]
 
     return [grouped_map[k] for k in order]

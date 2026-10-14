@@ -173,5 +173,55 @@ class TestDatabase(unittest.TestCase):
         self.db.reset_database()
         self.assertEqual(len(self.db.get_jobs()), 0)
 
+    def test_company_filter_and_logo(self):
+        j1 = Job(
+            source="jobstreet",
+            external_id="c1",
+            title="Backend Engineer",
+            company="Tokopedia",
+            location_raw="Jakarta",
+            area="jakarta_selatan",
+            url="https://jobstreet.com/c1",
+            company_logo="https://logo.com/tokopedia.png",
+        )
+        j2 = Job(
+            source="kalibrr",
+            external_id="c2",
+            title="Frontend Engineer",
+            company="Shopee",
+            location_raw="Jakarta",
+            area="jakarta_selatan",
+            url="https://kalibrr.com/c2",
+            company_logo="https://logo.com/shopee.png",
+        )
+        j3 = Job(
+            source="linkedin",
+            external_id="c3",
+            title="Fullstack Developer",
+            company="Tokopedia",
+            location_raw="Jakarta",
+            area="jakarta_selatan",
+            url="https://linkedin.com/c3",
+        )
+        self.db.upsert_jobs([j1, j2, j3])
+
+        # Test company filter
+        tokopedia_jobs = self.db.get_jobs(company="Tokopedia")
+        self.assertEqual(len(tokopedia_jobs), 2)
+        self.assertTrue(all(j["company"] == "Tokopedia" for j in tokopedia_jobs))
+
+        shopee_jobs = self.db.get_jobs(company="Shopee")
+        self.assertEqual(len(shopee_jobs), 1)
+        self.assertEqual(shopee_jobs[0]["company_logo"], "https://logo.com/shopee.png")
+
+        # Test get_companies aggregation
+        companies = self.db.get_companies()
+        company_names = [c["company"] for c in companies]
+        self.assertIn("Tokopedia", company_names)
+        self.assertIn("Shopee", company_names)
+        tokopedia_stat = next(c for c in companies if c["company"] == "Tokopedia")
+        self.assertEqual(tokopedia_stat["job_count"], 2)
+        self.assertEqual(tokopedia_stat["company_logo"], "https://logo.com/tokopedia.png")
+
 if __name__ == "__main__":
     unittest.main()

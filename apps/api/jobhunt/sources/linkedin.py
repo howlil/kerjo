@@ -58,6 +58,13 @@ def parse_linkedin_html(html_text: str) -> list[Job]:
         snippet_m = re.search(r'<div[^>]*base-search-card__metadata[^>]*>(.*?)</div>', card, re.S)
         desc = re.sub(r'<[^>]+>', ' ', snippet_m.group(1)).strip() if snippet_m else None
 
+        logo_m = re.search(r'<img[^>]+class="[^"]*artdeco-entity-image[^"]*"[^>]+(?:data-delayed-url|src)="([^"]+)"', card, re.S)
+        if not logo_m:
+            logo_m = re.search(r'<img[^>]+(?:data-delayed-url|src)="([^"]+)"[^>]+class="[^"]*artdeco-entity-image', card, re.S)
+        company_logo = html.unescape(logo_m.group(1)).strip() if logo_m else None
+        if company_logo and ("data:image" in company_logo or "ghost" in company_logo):
+            company_logo = None
+
         jobs.append(
             Job(
                 source="linkedin",
@@ -72,6 +79,7 @@ def parse_linkedin_html(html_text: str) -> list[Job]:
                 is_remote=is_remote,
                 posted_at=posted_at,
                 description=desc,
+                company_logo=company_logo,
             )
         )
 

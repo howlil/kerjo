@@ -27,7 +27,9 @@ def parse_glints_payload(data: dict) -> list[Job]:
             continue
 
         title = (item.get("title") or "").strip()
-        company = (item.get("company") or {}).get("name") or "Unknown Company"
+        comp_obj = item.get("company") or {}
+        company = comp_obj.get("name") or "Unknown Company"
+        company_logo = comp_obj.get("logo") or comp_obj.get("logoUrl") or comp_obj.get("avatar")
 
         # Build location
         loc = item.get("location") or {}
@@ -82,6 +84,7 @@ def parse_glints_payload(data: dict) -> list[Job]:
                 is_remote=is_remote,
                 posted_at=posted_at,
                 description=desc or None,
+                company_logo=company_logo,
             )
         )
     return jobs

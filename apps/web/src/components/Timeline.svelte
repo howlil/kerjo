@@ -67,7 +67,7 @@
       <div class="flex items-center gap-2">
         <span class="text-xs font-semibold text-[var(--color-text-heading)]">Ditemukan Scraper</span>
         {#if job.is_new}
-          <span class="text-[10px] font-semibold px-2 py-0.2 rounded-full bg-[var(--color-highlight)] text-[#121212] border border-[var(--color-border-strong)]">
+          <span class="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-black text-white border border-black">
             NEW
           </span>
         {/if}
@@ -83,23 +83,23 @@
 
   <!-- Step 3: Current Status & Verification -->
   <div class="relative group">
-    <div class="absolute -left-6 top-0.5 w-[22px] height-[22px] rounded-full border border-[var(--color-border-strong)] bg-[#ACE1AF]/20 flex items-center justify-center text-[#121212]">
-      <span class="w-2 h-2 rounded-full bg-[#ACE1AF] animate-pulse"></span>
+    <div class="absolute -left-6 top-0.5 w-[22px] height-[22px] rounded-full border border-black bg-black flex items-center justify-center text-white">
+      <span class="w-1.5 h-1.5 rounded-full bg-white animate-pulse"></span>
     </div>
     <div class="space-y-0.5">
       <div class="flex items-center gap-2">
         <span class="text-xs font-semibold text-[var(--color-text-heading)]">Status Loker</span>
-        <span class="text-[10px] font-mono font-medium px-2 py-0.5 rounded-full bg-[#ACE1AF]/30 text-[#121212] border border-[#ACE1AF]">
+        <span class="text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full bg-black text-white border border-black">
           Aktif
         </span>
       </div>
       {#if job.experience_level && job.experience_level !== 'unspecified'}
         <div class="pt-1 flex flex-wrap gap-1.5 items-center">
-          <span class="text-[10px] font-mono px-2 py-0.5 rounded-full bg-[var(--color-accent-soft)] text-[var(--color-on-accent)] border border-[var(--color-accent)]">
+          <span class="text-[10px] font-mono px-2 py-0.5 rounded-full bg-black text-white border border-black">
             Level: {job.experience_level.toUpperCase()}
           </span>
           {#if job.experience_raw}
-            <span class="text-[10px] font-mono px-2 py-0.5 rounded-full bg-[var(--color-surface-muted)] text-[var(--color-text-secondary)] border border-[var(--color-border)]">
+            <span class="text-[10px] font-mono px-2 py-0.5 rounded-full bg-neutral-100 text-neutral-800 border border-neutral-300">
               Syarat: {job.experience_raw}
             </span>
           {/if}

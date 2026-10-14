@@ -53,6 +53,7 @@ class JobhuntRequestHandler(http.server.BaseHTTPRequestHandler):
             q = query.get("q", [None])[0]
             exp_level = query.get("experience_level", [None])[0]
             role_cat = query.get("role_category", [None])[0]
+            company = query.get("company", [None])[0]
             limit = int(query.get("limit", ["100"])[0])
             offset = int(query.get("offset", ["0"])[0])
             dedup_param = query.get("dedup", ["1"])[0]
@@ -66,12 +67,18 @@ class JobhuntRequestHandler(http.server.BaseHTTPRequestHandler):
                 query_text=q,
                 experience_level=exp_level,
                 role_category=role_cat,
+                company=company,
                 limit=fetch_limit,
                 offset=offset,
             )
             if should_dedup:
                 jobs = group_dedup_jobs(jobs)[:limit]
             self._send_json({"jobs": jobs, "total": len(jobs)})
+            return
+
+        if path == "/api/companies":
+            companies = self.db.get_companies(limit=200)
+            self._send_json({"companies": companies})
             return
 
         if path == "/api/searches":
@@ -110,12 +117,13 @@ class JobhuntRequestHandler(http.server.BaseHTTPRequestHandler):
         html_msg = b"""
         <!DOCTYPE html>
         <html>
-        <head><title>Jobhunt API Server</title></head>
+        <head><title>kerjo API Server</title></head>
         <body style="font-family: sans-serif; padding: 40px; line-height: 1.6;">
-            <h2>Jobhunt API Server is Running!</h2>
+            <h2>kerjo API Server is Running!</h2>
             <p>API endpoints:</p>
             <ul>
                 <li><a href="/api/jobs">/api/jobs</a></li>
+                <li><a href="/api/companies">/api/companies</a></li>
                 <li><a href="/api/searches">/api/searches</a></li>
                 <li><a href="/api/runs">/api/runs</a></li>
             </ul>
@@ -229,7 +237,7 @@ def create_server(host: str = "127.0.0.1", port: int = 8000, db: Optional[Databa
 
 def run_server(host: str = "127.0.0.1", port: int = 8000):
     server = create_server(host, port)
-    print(f"[*] Jobhunt server running at http://{host}:{port}/")
+    print(f"[*] kerjo server running at http://{host}:{port}/")
     try:
         server.serve_forever()
     except KeyboardInterrupt:

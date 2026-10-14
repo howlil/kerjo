@@ -49,6 +49,7 @@ class Database:
                     max_years REAL,
                     experience_raw TEXT,
                     role_category TEXT DEFAULT 'other',
+                    company_logo TEXT,
                     is_new INTEGER NOT NULL DEFAULT 1,
                     first_seen_at TEXT NOT NULL,
                     last_seen_at TEXT NOT NULL,
@@ -59,6 +60,7 @@ class Database:
                 CREATE INDEX IF NOT EXISTS idx_jobs_area ON jobs(area);
                 CREATE INDEX IF NOT EXISTS idx_jobs_is_new ON jobs(is_new);
                 CREATE INDEX IF NOT EXISTS idx_jobs_posted_at ON jobs(posted_at);
+                CREATE INDEX IF NOT EXISTS idx_jobs_company ON jobs(company);
 
                 CREATE TABLE IF NOT EXISTS job_runs (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -82,6 +84,7 @@ class Database:
                 ("max_years", "REAL"),
                 ("experience_raw", "TEXT"),
                 ("role_category", "TEXT DEFAULT 'other'"),
+                ("company_logo", "TEXT"),
             ]
             for col_name, col_def in migrations:
                 if col_name not in existing_cols:
@@ -93,6 +96,7 @@ class Database:
             # Create indexes on migrated columns safely
             conn.execute("CREATE INDEX IF NOT EXISTS idx_jobs_exp_level ON jobs(experience_level);")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_jobs_role_cat ON jobs(role_category);")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_jobs_company ON jobs(company);")
 
     # ---------------- Search Queries ----------------
     def create_search(self, keyword: str, area: str = "all", sources: Optional[List[str]] = None) -> int:
@@ -217,6 +221,7 @@ class Database:
                             max_years = COALESCE(?, max_years),
                             experience_raw = COALESCE(?, experience_raw),
                             role_category = COALESCE(?, role_category),
+                            company_logo = COALESCE(?, company_logo),
                             last_seen_at = ?
                         WHERE id = ?
                         """,
@@ -236,6 +241,7 @@ class Database:
                             job.max_years,
                             job.experience_raw,
                             job.role_category,
+                            job.company_logo,
                             now,
                             existing["id"],
                         ),
@@ -248,8 +254,8 @@ class Database:
                             source, external_id, title, company, location_raw, area, url,
                             salary, work_type, is_remote, posted_at, description,
                             experience_level, min_years, max_years, experience_raw, role_category,
-                            is_new, first_seen_at, last_seen_at
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+                            company_logo, is_new, first_seen_at, last_seen_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
                         """,
                         (
                             job.source,
@@ -269,6 +275,7 @@ class Database:
                             job.max_years,
                             job.experience_raw,
                             job.role_category,
+                            job.company_logo,
                             now,
                             now,
                         ),
@@ -292,6 +299,7 @@ class Database:
         query_text: Optional[str] = None,
         experience_level: Optional[str] = None,
         role_category: Optional[str] = None,
+        company: Optional[str] = None,
         limit: int = 100,
         offset: int = 0,
     ) -> List[Dict[str, Any]]:
@@ -308,6 +316,10 @@ class Database:
 
         if is_new_only:
             sql += " AND is_new = 1"
+
+        if company and company != "all":
+            sql += " AND (company = ? OR company LIKE ?)"
+            params.extend([company.strip(), f"%{company.strip()}%"])
 
         if experience_level and experience_level != "all":
             if experience_level == "entry":
@@ -335,6 +347,21 @@ class Database:
 
         with self._get_connection() as conn:
             rows = conn.execute(sql, params).fetchall()
+            return [dict(r) for r in rows]
+
+    def get_companies(self, limit: int = 150) -> List[Dict[str, Any]]:
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                """
+                SELECT company, COUNT(*) as job_count, MAX(company_logo) as company_logo
+                FROM jobs
+                WHERE role_category != 'other' AND company IS NOT NULL AND TRIM(company) != ''
+                GROUP BY company
+                ORDER BY job_count DESC, company ASC
+                LIMIT ?
+                """,
+                (limit,)
+            ).fetchall()
             return [dict(r) for r in rows]
 
     def record_run(

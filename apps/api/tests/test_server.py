@@ -73,5 +73,26 @@ class TestServer(unittest.TestCase):
             data = json.loads(resp.read().decode())
             self.assertEqual(data["jobs"][0]["is_new"], 0)
 
+    def test_get_companies_and_filter(self):
+        url = f"http://127.0.0.1:{self.port}/api/companies"
+        req = urllib.request.Request(url)
+        with urllib.request.urlopen(req) as resp:
+            self.assertEqual(resp.status, 200)
+            data = json.loads(resp.read().decode())
+            self.assertIn("companies", data)
+            self.assertEqual(len(data["companies"]), 1)
+            self.assertEqual(data["companies"][0]["company"], "Startup Inc")
+
+        # Test filter jobs by company
+        url_filter = f"http://127.0.0.1:{self.port}/api/jobs?company=Startup+Inc"
+        with urllib.request.urlopen(url_filter) as resp:
+            data = json.loads(resp.read().decode())
+            self.assertEqual(len(data["jobs"]), 1)
+
+        url_filter_none = f"http://127.0.0.1:{self.port}/api/jobs?company=NonExistentCo"
+        with urllib.request.urlopen(url_filter_none) as resp:
+            data = json.loads(resp.read().decode())
+            self.assertEqual(len(data["jobs"]), 0)
+
 if __name__ == "__main__":
     unittest.main()

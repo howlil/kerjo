@@ -21,6 +21,17 @@ def parse_jobstreet_payload(data: dict) -> list[Job]:
         title = item.get("title", "").strip()
         company = (item.get("companyName") or (item.get("advertiser") or {}).get("description") or "Unknown Company").strip()
 
+        branding = item.get("branding") or {}
+        advertiser = item.get("advertiser") or {}
+        branding_assets = branding.get("assets") or {}
+        raw_logo = (
+            branding.get("logo")
+            or advertiser.get("logo")
+            or item.get("companyLogo")
+            or (branding_assets.get("logo") or {}).get("url")
+        )
+        company_logo = raw_logo.get("url") if isinstance(raw_logo, dict) else raw_logo
+
         # Extract locations
         loc_labels = [l.get("label", "").strip() for l in item.get("locations", []) if l.get("label")]
         loc_str = ", ".join(loc_labels) if loc_labels else "Jakarta"
@@ -66,6 +77,7 @@ def parse_jobstreet_payload(data: dict) -> list[Job]:
                 is_remote=is_remote,
                 posted_at=posted_at,
                 description=desc,
+                company_logo=company_logo,
             )
         )
     return jobs

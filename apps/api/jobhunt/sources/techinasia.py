@@ -24,6 +24,7 @@ def parse_tia_payload(data: dict) -> list[Job]:
         title = (item.get("title") or "").strip()
         comp_obj = item.get("company") or {}
         company = comp_obj.get("name") or "Unknown Company"
+        company_logo = comp_obj.get("logo") or comp_obj.get("logo_url") or comp_obj.get("avatar_url") or item.get("company_logo")
 
         city_obj = item.get("city") or {}
         city_name = city_obj.get("name") or ""
@@ -70,6 +71,7 @@ def parse_tia_payload(data: dict) -> list[Job]:
                 is_remote=is_remote,
                 posted_at=posted_at,
                 description=desc or None,
+                company_logo=company_logo,
             )
         )
     return jobs
