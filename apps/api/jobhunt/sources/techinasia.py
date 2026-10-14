@@ -116,6 +116,8 @@ def fetch_techinasia(keyword: str, page: int = 1, limit: int = 25) -> SourceResu
             success=False,
             jobs=[],
             error_message=f"HTTP Error {e.code}: {e.reason}",
+        http_status=e.code,
+        retry_after_seconds=retry_after_seconds(e.headers.get("Retry-After") if e.headers else None),
         )
     except Exception as e:
         return SourceResult(
